@@ -1,0 +1,24 @@
+telegram:
+  enabled: true
+  # Token and chat_id can be set here or via env vars:
+  #   BPIMON_TELEGRAM_TOKEN, BPIMON_TELEGRAM_CHATID, BPIMON_TELEGRAM_ADMINS
+
+thresholds:
+  cpu: 85           # % CPU usage
+  cpu_temp: 70      # °C
+  ram: 90           # % RAM usage
+  disk: 85          # % disk usage
+  smart_temp: 55    # °C SMART temperature
+  smart_life: 20    # % remaining drive life
+  interval_min: 2   # alert check interval (minutes)
+  cooldown_min: 30  # repeat alert cooldown (minutes)
+
+devices:
+  smart:
+    - /dev/sda      # SMART-monitored block devices
+
+  # mmc:            # optional: SD card device names (auto-discovered if omitted)
+  #   - mmcblk0
+
+  docker:
+    - my-container  # Docker containers to monitor and allow restart

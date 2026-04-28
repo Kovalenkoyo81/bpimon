@@ -1,0 +1,20 @@
+[Unit]
+Description=bpimon — Telegram system monitor bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/bpimon \
+    -config /etc/bpimon/config.yaml \
+    -state /var/lib/bpimon/alert_state.json
+
+WorkingDirectory=/var/lib/bpimon
+Restart=on-failure
+RestartSec=5
+
+# Credentials are loaded from a separate file (not tracked in git).
+# See README: "Deploy as a systemd service".
+EnvironmentFile=/etc/bpimon/env
+
+[Install]
+WantedBy=multi-user.target
