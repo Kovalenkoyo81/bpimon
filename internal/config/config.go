@@ -4,10 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	smartDevRe   = regexp.MustCompile(`^/dev/[a-zA-Z][a-zA-Z0-9/_-]*$`)
+	mmcblkRe     = regexp.MustCompile(`^mmcblk\d+$`)
+	dockerNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.\-]*$`)
 )
 
 type Thresholds struct {
@@ -67,13 +75,19 @@ func (c *Config) Validate() error {
 		errs = append(errs, "thresholds.cooldown_min must be > 0")
 	}
 	for _, dev := range c.Devices.Smart {
-		if !strings.HasPrefix(dev, "/dev/") {
-			errs = append(errs, fmt.Sprintf("devices.smart: %q must start with /dev/", dev))
+		clean := filepath.Clean(dev)
+		if !smartDevRe.MatchString(clean) {
+			errs = append(errs, fmt.Sprintf("devices.smart: %q is not a valid device path (expected /dev/sdX, /dev/nvmeX, etc.)", dev))
 		}
 	}
 	for _, dev := range c.Devices.MMC {
-		if strings.HasPrefix(dev, "/dev/") {
-			errs = append(errs, fmt.Sprintf("devices.mmc: %q must be a block device name (e.g. mmcblk0), not a path", dev))
+		if !mmcblkRe.MatchString(dev) {
+			errs = append(errs, fmt.Sprintf("devices.mmc: %q must be a block device name matching mmcblkN (e.g. mmcblk0)", dev))
+		}
+	}
+	for _, dev := range c.Devices.Docker {
+		if !dockerNameRe.MatchString(dev) {
+			errs = append(errs, fmt.Sprintf("devices.docker: %q is not a valid container name", dev))
 		}
 	}
 	if len(c.Devices.Smart) > 0 {

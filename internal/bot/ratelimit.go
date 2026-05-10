@@ -6,10 +6,11 @@ import (
 )
 
 type RateLimiter struct {
-	mu       sync.Mutex
-	window   time.Duration
-	maxCalls int
-	calls    map[int64][]time.Time
+	mu          sync.Mutex
+	window      time.Duration
+	maxCalls    int
+	calls       map[int64][]time.Time
+	lastCleanup time.Time
 }
 
 func NewRateLimiter(window time.Duration, maxCalls int) *RateLimiter {
@@ -28,6 +29,24 @@ func (r *RateLimiter) Allow(userID int64) bool {
 	now := time.Now()
 	cutoff := now.Add(-r.window)
 
+	// Periodic full sweep to prevent unbounded map growth from inactive users.
+	if now.Sub(r.lastCleanup) > r.window {
+		for id, times := range r.calls {
+			var keep []time.Time
+			for _, t := range times {
+				if t.After(cutoff) {
+					keep = append(keep, t)
+				}
+			}
+			if len(keep) == 0 {
+				delete(r.calls, id)
+			} else {
+				r.calls[id] = keep
+			}
+		}
+		r.lastCleanup = now
+	}
+
 	var recent []time.Time
 	for _, t := range r.calls[userID] {
 		if t.After(cutoff) {
@@ -40,7 +59,6 @@ func (r *RateLimiter) Allow(userID int64) bool {
 		return false
 	}
 
-	recent = append(recent, now)
-	r.calls[userID] = recent
+	r.calls[userID] = append(recent, now)
 	return true
 }
