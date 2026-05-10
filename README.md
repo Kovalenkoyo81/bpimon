@@ -66,16 +66,16 @@ Add these exports to `~/.bashrc` or `~/.zshrc` to avoid re-entering them each se
 ### 3. Deploy to your SBC
 
 ```bash
-make deploy SERVER=user@your-sbc-ip VERSION=v1.4.1
+make deploy SERVER=user@your-sbc-ip
 ```
 
-The Makefile cross-compiles the binary, uploads everything to the server, writes credentials to `/etc/bpimon/env` (mode `600`), and starts the service. Done.
+The Makefile cross-compiles the binary, uploads everything to the server, writes credentials to `/etc/bpimon/env` (mode `600`), and starts the service. The version is picked up automatically from the latest git tag. Done.
 
 **Default target architecture is `linux/arm v7`.** For other boards:
 
 ```bash
-make deploy SERVER=user@host VERSION=v1.4.1 GOARCH=arm64   # Raspberry Pi 4/5, Orange Pi 5
-make deploy SERVER=user@host VERSION=v1.4.1 GOARCH=amd64   # x86_64
+make deploy SERVER=user@host GOARCH=arm64   # Raspberry Pi 4/5, Orange Pi 5
+make deploy SERVER=user@host GOARCH=amd64   # x86_64
 ```
 
 ### 4. Check it works
@@ -147,7 +147,7 @@ make follow             # live log stream from SERVER
 make status             # systemctl status on SERVER
 ```
 
-Key variables: `SERVER`, `VERSION`, `GOOS`, `GOARCH`, `GOARM`
+Key variables: `SERVER`, `GOOS`, `GOARCH`, `GOARM`. `VERSION` is auto-detected from the latest git tag.
 
 ## Troubleshooting
 
