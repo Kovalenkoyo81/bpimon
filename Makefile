@@ -1,4 +1,4 @@
-VERSION    ?= v1.4.0
+VERSION    ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 BUILD_DATE := $(shell date -u +%Y-%m-%d)
 LDFLAGS    := -X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)
 BINARY     := bpimon
