@@ -33,7 +33,20 @@ Monitors CPU, RAM, disk, SMART drives, SD cards, and Docker containers. Sends al
 
 ## Quick start
 
-Run these commands **on your SBC** (via SSH or directly in the terminal).
+**Choose your installation method:**
+
+| | Cross-compile (recommended) | Local build |
+|---|---|---|
+| **How** | Build on your laptop, upload to SBC | Build directly on the SBC |
+| **Best for** | Slow boards: Raspberry Pi Zero, Pi 1, Pi 2 | Faster boards: Pi 3/4/5, Orange Pi, Banana Pi |
+| **Requires Go on** | Your laptop/desktop | The SBC itself |
+| **Build time** | Seconds | Minutes (or longer on slow boards) |
+
+→ [Cross-compile from another machine](#managing-from-another-machine-optional) — recommended for slow or resource-constrained boards.
+
+→ Continue below for local build on the SBC.
+
+---
 
 ### 1. Clone
 
@@ -79,7 +92,7 @@ make logs
 
 ## Managing from another machine (optional)
 
-If you prefer to build and deploy from a separate computer rather than directly on the SBC:
+**Recommended for slow or resource-constrained boards** (Raspberry Pi Zero, Pi 1, Pi 2, any board where compiling takes too long). Build on your laptop or desktop in seconds, upload the ready binary via SSH.
 
 ```bash
 # Set credentials in your current shell session
