@@ -33,10 +33,12 @@ Monitors CPU, RAM, disk, SMART drives, SD cards, and Docker containers. Sends al
 
 ## Quick start
 
+Run these commands **on your SBC** (via SSH or directly in the terminal).
+
 ### 1. Clone
 
 ```bash
-git clone https://github.com/kovalenkoyo81/bpimon.git
+git clone https://github.com/Kovalenkoyo81/bpimon.git
 cd bpimon
 cp config.yaml.example config.yaml
 ```
@@ -53,25 +55,43 @@ devices:
     - my-container    # list your Docker containers, or remove section
 ```
 
-Set your Telegram credentials as environment variables. The Makefile will write them to `/etc/bpimon/env` on the server (mode `600`, readable only by root) — they are never stored in the repository:
+### 3. Install
+
+Set your Telegram credentials and run the installer:
 
 ```bash
 export BPIMON_TELEGRAM_TOKEN=your_bot_token
 export BPIMON_TELEGRAM_CHATID=your_chat_id    # negative number for group chats
 export BPIMON_TELEGRAM_ADMINS=123456789        # your Telegram user ID
+sudo -E make install
 ```
 
-Add these exports to `~/.bashrc` or `~/.zshrc` to avoid re-entering them each session.
+The installer builds the binary, installs it to `/usr/local/bin`, stores credentials in `/etc/bpimon/env` (mode `600`, readable only by root), and starts the service. You only need to set these variables once — they are saved on the machine and survive reboots.
 
-### 3. Deploy to your SBC
+### 4. Check it works
 
 ```bash
+make status
+make logs
+```
+
+---
+
+## Managing from another machine (optional)
+
+If you prefer to build and deploy from a separate computer rather than directly on the SBC:
+
+```bash
+# Set credentials in your current shell session
+export BPIMON_TELEGRAM_TOKEN=your_bot_token
+export BPIMON_TELEGRAM_CHATID=your_chat_id
+export BPIMON_TELEGRAM_ADMINS=123456789
+
+# Deploy (cross-compiles and uploads via SSH)
 make deploy SERVER=user@your-sbc-ip
 ```
 
-The Makefile cross-compiles the binary, uploads everything to the server, writes credentials to `/etc/bpimon/env` (mode `600`), and starts the service. The version is picked up automatically from the latest git tag. Done.
-
-**Default target architecture is `linux/arm64`.** For other boards:
+Default target architecture is `linux/arm64`. For other boards:
 
 ```bash
 make deploy SERVER=user@host GOARCH=arm GOARM=7   # Raspberry Pi 2/3, Orange Pi, Banana Pi (armv7)
@@ -79,14 +99,12 @@ make deploy SERVER=user@host GOARCH=arm GOARM=6   # Raspberry Pi 1, Zero
 make deploy SERVER=user@host GOARCH=amd64         # x86_64
 ```
 
-### 4. Check it works
+Check status and logs remotely:
 
 ```bash
 make status SERVER=user@your-sbc-ip
 make logs   SERVER=user@your-sbc-ip
 ```
-
-The bot will send an initial status message to your chat on startup.
 
 ---
 
@@ -139,13 +157,19 @@ Admin commands (`/restart`, `/reboot`, `/poweroff`, `/silence`) require the send
 ## Makefile reference
 
 ```bash
-make build              # cross-compile binary
-make deploy             # build + upload + start on SERVER
+make install            # build natively and install on this machine (run on the SBC)
+make status             # systemctl status (local)
+make logs               # last 50 log lines (local)
+make follow             # live log stream (local)
+
+make deploy SERVER=...  # cross-compile and deploy to a remote machine
+make status SERVER=...  # systemctl status on remote machine
+make logs   SERVER=...  # last 50 log lines from remote machine
+make follow SERVER=...  # live log stream from remote machine
+
+make build              # cross-compile binary only
 make test               # run tests
 make vet                # run go vet
-make logs               # last 50 log lines from SERVER
-make follow             # live log stream from SERVER
-make status             # systemctl status on SERVER
 ```
 
 Key variables: `SERVER`, `GOOS`, `GOARCH`, `GOARM`. `VERSION` is auto-detected from the latest git tag.
