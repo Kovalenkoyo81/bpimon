@@ -6,6 +6,23 @@ import (
 	"strings"
 )
 
+const DockerAutoDiscover = "bpi-auto-discover"
+
+// DiscoverDockerContainers returns names of all currently running containers.
+func DiscoverDockerContainers() []string {
+	out, err := exec.Command("docker", "ps", "--format", "{{.Names}}").Output()
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 type DockerHealth struct {
 	Container string
 	Status    string
