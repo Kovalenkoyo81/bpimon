@@ -71,11 +71,12 @@ make deploy SERVER=user@your-sbc-ip
 
 The Makefile cross-compiles the binary, uploads everything to the server, writes credentials to `/etc/bpimon/env` (mode `600`), and starts the service. The version is picked up automatically from the latest git tag. Done.
 
-**Default target architecture is `linux/arm v7`.** For other boards:
+**Default target architecture is `linux/arm64`.** For other boards:
 
 ```bash
-make deploy SERVER=user@host GOARCH=arm64   # Raspberry Pi 4/5, Orange Pi 5
-make deploy SERVER=user@host GOARCH=amd64   # x86_64
+make deploy SERVER=user@host GOARCH=arm GOARM=7   # Raspberry Pi 2/3, Orange Pi, Banana Pi (armv7)
+make deploy SERVER=user@host GOARCH=arm GOARM=6   # Raspberry Pi 1, Zero
+make deploy SERVER=user@host GOARCH=amd64         # x86_64
 ```
 
 ### 4. Check it works
