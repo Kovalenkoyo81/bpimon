@@ -33,44 +33,40 @@ Monitors CPU, RAM, disk, SMART drives, SD cards, and Docker containers. Sends al
 
 ## Quick start
 
-**Choose your installation method:**
+### Option A: install script (recommended, no Go required)
 
-| | Pre-built binary | Cross-compile | Local build |
-|---|---|---|---|
-| **How** | Download from Releases page | Build on your laptop, upload | Build directly on the server |
-| **Best for** | No Go installed anywhere | Slow boards (Pi Zero, Pi 1/2) | Faster boards with Go available |
-| **Requires Go** | No | On your laptop/desktop | On the server itself |
-| **Build time** | Instant | Seconds | Minutes |
-
-→ [Download a pre-built binary](#option-a-pre-built-binary-no-go-required) — easiest, no Go required.
-
-→ [Cross-compile from another machine](#managing-from-another-machine-optional) — for slow or resource-constrained boards.
-
-→ Continue below for local build on the server.
-
----
-
-### Option A: Pre-built binary (no Go required)
-
-Download the binary for your architecture from the [Releases page](https://github.com/Kovalenkoyo81/bpimon/releases/latest):
-
-| File | Architecture |
-|------|-------------|
-| `bpimon_amd64` | x86_64 (most PCs and servers) |
-| `bpimon_arm64` | 64-bit ARM (Raspberry Pi 3/4/5, Orange Pi, Banana Pi) |
-| `bpimon_armv7` | 32-bit ARMv7 (Raspberry Pi 2/3, Orange Pi, Banana Pi) |
-| `bpimon_armv6` | ARMv6 (Raspberry Pi 1, Zero) |
+Detects your architecture automatically, downloads the binary, and sets up the systemd service in one command.
 
 ```bash
-# Example for arm64:
-curl -L https://github.com/Kovalenkoyo81/bpimon/releases/latest/download/bpimon_arm64 -o bpimon
-chmod +x bpimon
-sudo mv bpimon /usr/local/bin/bpimon
+export BPIMON_TELEGRAM_TOKEN=your_bot_token
+export BPIMON_TELEGRAM_CHATID=your_chat_id    # negative number for group chats
+export BPIMON_TELEGRAM_ADMINS=123456789        # your Telegram user ID
+curl -fsSL https://github.com/Kovalenkoyo81/bpimon/releases/latest/download/install.sh | sudo -E bash
 ```
 
-Then continue from [step 2 (Configure)](#2-configure) below, skipping the clone and build steps.
+After installation, edit the config to match your hardware and restart:
+
+```bash
+nano /etc/bpimon/config.yaml
+systemctl restart bpimon
+```
+
+That's it — bot is running. Skip to [Check it works](#4-check-it-works).
 
 ---
+
+**Or build from source:**
+
+| | Cross-compile | Local build |
+|---|---|---|
+| **How** | Build on your laptop, upload to server | Build directly on the server |
+| **Best for** | Slow boards: Raspberry Pi Zero, Pi 1, Pi 2 | Faster boards: Pi 3/4/5, Orange Pi, Banana Pi |
+| **Requires Go on** | Your laptop/desktop | The server itself |
+| **Build time** | Seconds | Minutes (or longer on slow boards) |
+
+→ [Cross-compile from another machine](#managing-from-another-machine-optional) — recommended for slow or resource-constrained boards.
+
+→ Continue below for local build.
 
 ### 1. Clone
 

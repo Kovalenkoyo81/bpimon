@@ -43,4 +43,5 @@ jobs:
             bpimon_arm64
             bpimon_armv7
             bpimon_armv6
+            install.sh
           generate_release_notes: true
