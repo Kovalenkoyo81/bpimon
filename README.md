@@ -1,7 +1,7 @@
 # bpimon
 
-[![CI](https://github.com/kovalenkoyo81/bpimon/actions/workflows/ci.yml/badge.svg)](https://github.com/kovalenkoyo81/bpimon/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/badge/Go-1.25-blue)](https://golang.org)
+[![CI](https://github.com/Kovalenkoyo81/bpimon/actions/workflows/ci.yml/badge.svg)](https://github.com/Kovalenkoyo81/bpimon/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.25-blue)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Telegram bot for Linux system monitoring on single-board computers — Raspberry Pi, Orange Pi, Banana Pi, and any Linux SBC.
@@ -25,7 +25,7 @@ Monitors CPU, RAM, disk, SMART drives, SD cards, and Docker containers. Sends al
 
 ## Prerequisites
 
-- Go 1.25 or later — [install](https://golang.org/dl/)
+- Go 1.25 or later — [install](https://go.dev/dl/)
 - A Telegram bot token — create one via [@BotFather](https://t.me/botfather)
 - Your Telegram chat ID — get it from [@userinfobot](https://t.me/userinfobot)
 - Optional: `smartctl` for SMART monitoring (`apt install smartmontools`)
@@ -53,7 +53,7 @@ devices:
     - my-container    # list your Docker containers, or remove section
 ```
 
-Set your Telegram credentials as environment variables — they are never written to any file:
+Set your Telegram credentials as environment variables. The Makefile will write them to `/etc/bpimon/env` on the server (mode `600`, readable only by root) — they are never stored in the repository:
 
 ```bash
 export BPIMON_TELEGRAM_TOKEN=your_bot_token
@@ -66,7 +66,7 @@ Add these exports to `~/.bashrc` or `~/.zshrc` to avoid re-entering them each se
 ### 3. Deploy to your SBC
 
 ```bash
-make deploy SERVER=user@your-sbc-ip
+make deploy SERVER=user@your-sbc-ip VERSION=v1.4.1
 ```
 
 The Makefile cross-compiles the binary, uploads everything to the server, writes credentials to `/etc/bpimon/env` (mode `600`), and starts the service. Done.
@@ -74,8 +74,8 @@ The Makefile cross-compiles the binary, uploads everything to the server, writes
 **Default target architecture is `linux/arm v7`.** For other boards:
 
 ```bash
-make deploy SERVER=user@host GOARCH=arm64   # Raspberry Pi 4/5, Orange Pi 5
-make deploy SERVER=user@host GOARCH=amd64   # x86_64
+make deploy SERVER=user@host VERSION=v1.4.1 GOARCH=arm64   # Raspberry Pi 4/5, Orange Pi 5
+make deploy SERVER=user@host VERSION=v1.4.1 GOARCH=amd64   # x86_64
 ```
 
 ### 4. Check it works
