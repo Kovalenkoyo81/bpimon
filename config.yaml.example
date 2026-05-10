@@ -21,4 +21,6 @@ devices:
   #   - mmcblk0
 
   docker:
-    - my-container  # Docker containers to monitor and allow restart
+    - bpi-auto-discover   # auto-discover all running containers
+  # docker:               # disabled: omit or leave section out entirely
+  #   - my-container      # or list specific containers to monitor only those

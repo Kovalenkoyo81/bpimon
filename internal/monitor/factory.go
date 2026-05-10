@@ -29,14 +29,23 @@ func NewProviders(smartDevices, mmcDevices, dockerContainers []string) []Provide
 
 	if len(dockerContainers) > 0 {
 		if !(Docker{}).Available() {
-			log.Warn.Printf("docker not found — skipping %d container(s)", len(dockerContainers))
+			log.Warn.Printf("docker not found — skipping Docker monitoring")
 		} else {
+			containers := dockerContainers
+			if len(containers) == 1 && containers[0] == DockerAutoDiscover {
+				containers = DiscoverDockerContainers()
+				if len(containers) == 0 {
+					log.Warn.Printf("docker auto-discover: no running containers found")
+				} else {
+					log.Info.Printf("docker auto-discover: found %d container(s): %s", len(containers), strings.Join(containers, ", "))
+				}
+			}
 			seen := make(map[string]string)
-			for _, name := range dockerContainers {
+			for _, name := range containers {
 				norm := strings.ReplaceAll(name, "-", "_")
 				if existing, ok := seen[norm]; ok {
 					fmt.Fprintf(os.Stderr, "config error: docker container name collision: %q and %q both normalize to /restart_%s\n", existing, name, norm)
-				os.Exit(1)
+					os.Exit(1)
 				}
 				seen[norm] = name
 				providers = append(providers, Docker{Container: name})
