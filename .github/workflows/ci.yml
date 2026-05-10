@@ -17,6 +17,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: debug
+        run: ls -la && ls -la cmd/ && ls -la cmd/bpimon/
+
       - name: vet
         run: go vet ./...
 
