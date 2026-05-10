@@ -78,6 +78,7 @@ systemctl stop bpimon 2>/dev/null || true
 
 mkdir -p /etc/bpimon /var/lib/bpimon
 mv /tmp/bpimon_new /usr/local/bin/bpimon
+restorecon -v /usr/local/bin/bpimon 2>/dev/null || true
 
 # ── config ────────────────────────────────────────────────────────────────────
 # Install the example config only on first install — never overwrite existing config.
