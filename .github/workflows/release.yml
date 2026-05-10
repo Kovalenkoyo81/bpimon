@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: set build vars
+        run: |
+          echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_ENV
+
+      - name: build (linux/amd64)
+        run: GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ env.VERSION }} -X main.buildDate=${{ env.BUILD_DATE }}" -o bpimon_amd64 ./cmd/bpimon
+
+      - name: build (linux/arm64)
+        run: GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=${{ env.VERSION }} -X main.buildDate=${{ env.BUILD_DATE }}" -o bpimon_arm64 ./cmd/bpimon
+
+      - name: build (linux/arm v7)
+        run: GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w -X main.version=${{ env.VERSION }} -X main.buildDate=${{ env.BUILD_DATE }}" -o bpimon_armv7 ./cmd/bpimon
+
+      - name: build (linux/arm v6)
+        run: GOOS=linux GOARCH=arm GOARM=6 go build -ldflags="-s -w -X main.version=${{ env.VERSION }} -X main.buildDate=${{ env.BUILD_DATE }}" -o bpimon_armv6 ./cmd/bpimon
+
+      - name: publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bpimon_amd64
+            bpimon_arm64
+            bpimon_armv7
+            bpimon_armv6
+          generate_release_notes: true

@@ -104,6 +104,9 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return h.collectByName("Disk")
 
 	case "/sd":
+		if !h.hasProviderByPrefix("sd") {
+			return "No SD cards detected on this system"
+		}
 		return h.collectByPrefix("sd")
 
 	case "/smart":
@@ -352,7 +355,9 @@ func (h *Handler) buildCommandsMenu() string {
 	b.WriteString("/ram — RAM usage\n")
 	b.WriteString("/disk — disk usage\n")
 	b.WriteString("/smart — SMART disk health\n")
-	b.WriteString("/sd — SD cards\n")
+	if h.hasProviderByPrefix("sd") {
+		b.WriteString("/sd — SD cards\n")
+	}
 	b.WriteString("\n🐳 Docker:\n")
 	b.WriteString("/docker — container status\n")
 	for _, p := range h.Providers {

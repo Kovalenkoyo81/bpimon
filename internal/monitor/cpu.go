@@ -51,32 +51,49 @@ func (c *CPU) Usage() (CPUStat, error) {
 	return CPUStat{UsagePct: (1 - float64(diffIdle)/float64(diffTotal)) * 100}, nil
 }
 
-var cpuThermalKeywords = []string{"cpu", "soc", "pkg", "core", "ap", "arm"}
+// cpuThermalKeywords lists thermal zone type substrings in priority order.
+// Earlier entries win when multiple zones match. Covers x86 (Intel/AMD) and ARM SBCs.
+var cpuThermalKeywords = []string{
+	"x86_pkg_temp", // Intel package temperature — most accurate on Intel
+	"k10temp",      // AMD CPU temperature
+	"cpu",          // generic ARM SBC zones
+	"soc",
+	"ap",
+	"arm",
+	"pkg",          // matches x86_pkg_temp if not already caught
+	"core",         // coretemp (Intel per-die) or core zones
+	"acpi",         // acpitz — broad fallback, lower priority
+}
 
 func (c *CPU) TempC() (float64, error) {
 	zones, err := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
 	if err != nil || len(zones) == 0 {
 		return 0, fmt.Errorf("no thermal zones")
 	}
-	best := ""
+
+	// Scan all zones and pick the one with the highest-priority keyword match.
+	bestZone := ""
+	bestPriority := len(cpuThermalKeywords)
 	for _, tempPath := range zones {
 		dir := filepath.Dir(tempPath)
 		tb, _ := os.ReadFile(filepath.Join(dir, "type"))
 		zoneType := strings.ToLower(strings.TrimSpace(string(tb)))
-		for _, kw := range cpuThermalKeywords {
+		for i, kw := range cpuThermalKeywords {
+			if i >= bestPriority {
+				break
+			}
 			if strings.Contains(zoneType, kw) {
-				best = tempPath
+				bestPriority = i
+				bestZone = tempPath
 				break
 			}
 		}
-		if best != "" {
-			break
-		}
 	}
-	if best == "" {
-		best = zones[0]
+	if bestZone == "" {
+		bestZone = zones[0]
 	}
-	b, err := os.ReadFile(best)
+
+	b, err := os.ReadFile(bestZone)
 	if err != nil {
 		return 0, err
 	}
