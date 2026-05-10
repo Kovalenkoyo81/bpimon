@@ -86,6 +86,9 @@ func (c *Config) Validate() error {
 		}
 	}
 	for _, dev := range c.Devices.Docker {
+		if dev == "bpi-auto-discover" {
+			continue
+		}
 		if !dockerNameRe.MatchString(dev) {
 			errs = append(errs, fmt.Sprintf("devices.docker: %q is not a valid container name", dev))
 		}
