@@ -4,13 +4,13 @@ LDFLAGS    := -X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)
 BINARY     := bpimon
 SERVER     ?= root@your-sbc-ip
 GOOS       ?= linux
-GOARCH     ?= arm
-GOARM      ?= 7
+GOARCH     ?= arm64
+GOARM      ?=
 
 .PHONY: build deploy test vet logs follow status
 
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/bpimon/
+	GOOS=$(GOOS) GOARCH=$(GOARCH) $(if $(GOARM),GOARM=$(GOARM)) go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/bpimon/
 
 deploy: build
 	@if [ -z "$$BPIMON_TELEGRAM_TOKEN" ]; then \
