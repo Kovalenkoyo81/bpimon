@@ -33,7 +33,7 @@ func dmesgOutput() ([]byte, error) {
 		dmesgCache.data = out
 		dmesgCache.fetchedAt = time.Now()
 	}
-	return dmesgCache.data, nil
+	return append([]byte(nil), dmesgCache.data...), nil
 }
 
 type kmsgResult struct {

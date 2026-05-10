@@ -13,6 +13,7 @@ type pendingAction struct {
 	code      string
 	action    string
 	expiresAt time.Time
+	attempts  int
 }
 
 type Confirmator struct {
@@ -67,6 +68,10 @@ func (c *Confirmator) Validate(userID int64, input string) (string, bool) {
 		return "", false
 	}
 	if strings.TrimSpace(input) != p.code {
+		p.attempts++
+		if p.attempts >= 3 {
+			delete(c.pending, userID)
+		}
 		return "", false
 	}
 	action := p.action

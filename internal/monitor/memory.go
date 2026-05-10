@@ -39,6 +39,12 @@ func (Memory) Usage() (MemoryStat, error) {
 		}
 	}
 
+	if total == 0 {
+		return MemoryStat{}, fmt.Errorf("MemTotal is zero in /proc/meminfo")
+	}
+	if free > total {
+		free = total
+	}
 	used := total - free
 	return MemoryStat{
 		TotalMB: total / 1024,

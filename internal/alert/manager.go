@@ -86,15 +86,25 @@ func (m *Manager) Run(ctx context.Context) {
 			for _, a := range m.alerts {
 				name := a.Name()
 				ok, msg := a.Check()
+
+				m.mu.Lock()
+				active := m.active[name]
+				lastSent := m.lastSent[name]
+				m.mu.Unlock()
+
 				if ok {
-					if time.Since(m.lastSent[name]) >= m.cooldown {
+					if time.Since(lastSent) >= m.cooldown {
 						_ = m.notifier.SendAlert("🚨 " + name + ": " + msg)
+						m.mu.Lock()
 						m.lastSent[name] = time.Now()
 						m.active[name] = true
+						m.mu.Unlock()
 					}
-				} else if m.active[name] {
+				} else if active {
 					_ = m.notifier.SendAlert("✅ " + name + ": back to normal")
+					m.mu.Lock()
 					m.active[name] = false
+					m.mu.Unlock()
 				}
 			}
 		case <-ctx.Done():

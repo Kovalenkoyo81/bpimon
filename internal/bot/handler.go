@@ -163,6 +163,9 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		if err != nil || mins <= 0 {
 			return "⚠️ Specify minutes: /silence 30"
 		}
+		if mins > 10080 {
+			return "⚠️ Maximum silence duration is 10080 minutes (7 days)"
+		}
 		d := time.Duration(mins) * time.Minute
 		h.Silencer.Silence(d)
 		until := time.Now().Add(d).UTC().Format("15:04 UTC")
@@ -205,13 +208,17 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 func (h *Handler) execute(action string, s notifier.Notifier) string {
 	switch {
 	case action == "reboot":
-		if err := exec.Command("systemctl", "reboot").Start(); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := exec.CommandContext(ctx, "systemctl", "reboot").Run(); err != nil {
 			log.Error.Printf("reboot failed: %v", err)
 			return "❌ Failed to initiate reboot"
 		}
 		return "🔄 Server reboot initiated"
 	case action == "poweroff":
-		if err := exec.Command("systemctl", "poweroff").Start(); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := exec.CommandContext(ctx, "systemctl", "poweroff").Run(); err != nil {
 			log.Error.Printf("poweroff failed: %v", err)
 			return "❌ Failed to initiate poweroff"
 		}
