@@ -4,7 +4,7 @@
 [![Go](https://img.shields.io/badge/Go-1.25-blue)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Telegram bot for Linux system monitoring on single-board computers — Raspberry Pi, Orange Pi, Banana Pi, and any Linux SBC.
+Lightweight Telegram bot for basic Linux system monitoring. Originally built for single-board computers (Raspberry Pi, Orange Pi, Banana Pi), but works on any Linux machine — server, VPS, or desktop.
 
 Monitors CPU, RAM, disk, SMART drives, SD cards, and Docker containers. Sends alerts when thresholds are exceeded. Supports remote reboot/poweroff with confirmation.
 
