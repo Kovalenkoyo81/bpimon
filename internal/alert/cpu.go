@@ -22,7 +22,11 @@ func (a *CPU) Check() (bool, string) {
 		return false, ""
 	}
 	if s.UsagePct >= a.max {
-		return true, fmt.Sprintf("usage %.1f%%", s.UsagePct)
+		msg := fmt.Sprintf("usage %.1f%%", s.UsagePct)
+		if top := monitor.TopProcs(3); top != "" {
+			msg += "\n📋 Top: " + top
+		}
+		return true, msg
 	}
 	return false, ""
 }

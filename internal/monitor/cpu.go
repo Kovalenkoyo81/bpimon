@@ -3,6 +3,7 @@ package monitor
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -104,6 +105,32 @@ func (c *CPU) TempC() (float64, error) {
 	return float64(v) / 1000, nil
 }
 
+// TopProcs returns a short string of the top n CPU-consuming processes,
+// e.g. "nginx 45.2%, python 12.1%". Processes below 0.5% are omitted.
+// Returns "" if ps is unavailable or nothing is consuming CPU.
+func TopProcs(n int) string {
+	out, err := exec.Command("ps", "-eo", "comm,%cpu", "--sort=-%cpu", "--no-headers", "-w").Output()
+	if err != nil {
+		return ""
+	}
+	var parts []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		pct, _ := strconv.ParseFloat(fields[len(fields)-1], 64)
+		if pct < 0.5 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s %.1f%%", fields[0], pct))
+		if len(parts) >= n {
+			break
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
 func (c *CPU) Status() (string, error) {
 	s, err := c.Usage()
 	if err != nil {
@@ -112,6 +139,9 @@ func (c *CPU) Status() (string, error) {
 	line := "🖥 CPU: " + strconv.FormatFloat(s.UsagePct, 'f', 1, 64) + "%"
 	if t, err := c.TempC(); err == nil {
 		line += fmt.Sprintf(" | %.1f°C", t)
+	}
+	if top := TopProcs(3); top != "" {
+		line += "\n📋 Top: " + top
 	}
 	return line, nil
 }
