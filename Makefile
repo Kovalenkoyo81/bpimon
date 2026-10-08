@@ -2,6 +2,7 @@ VERSION    ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 BUILD_DATE := $(shell date -u +%Y-%m-%d)
 LDFLAGS    := -X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)
 BINARY     := bpimon
+DIST       := dist
 SERVER     ?=
 GOOS       ?= linux
 GOARCH     ?= arm64
@@ -13,7 +14,7 @@ else
   REMOTE :=
 endif
 
-.PHONY: install build deploy test vet logs follow status
+.PHONY: install build dist deploy test vet logs follow status
 
 # Install locally on this machine (run directly on the SBC)
 install:
@@ -34,7 +35,18 @@ install:
 
 # Cross-compile binary (for deploy to a remote machine)
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) $(if $(GOARM),GOARM=$(GOARM)) go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/bpimon/
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(if $(GOARM),GOARM=$(GOARM)) go build -trimpath -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/bpimon/
+
+# All release artifacts + sha256sums.txt into dist/ (used by CI and release)
+# CGO_ENABLED=0 — static binaries, no glibc dependency
+dist:
+	rm -rf $(DIST) && mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64       go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(DIST)/bpimon_amd64 ./cmd/bpimon/
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64       go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(DIST)/bpimon_arm64 ./cmd/bpimon/
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(DIST)/bpimon_armv7 ./cmd/bpimon/
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(DIST)/bpimon_armv6 ./cmd/bpimon/
+	cp install.sh deploy/bpimon.service config.yaml.example $(DIST)/
+	cd $(DIST) && sha256sum * > sha256sums.txt
 
 # Deploy to a remote machine (optional)
 deploy: build

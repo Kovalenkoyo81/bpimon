@@ -1,6 +1,7 @@
 # Binary
 /bpimon
 /bpimon_*
+/dist/
 
 # Config with real credentials/devices
 config.yaml
