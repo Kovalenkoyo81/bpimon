@@ -16,7 +16,6 @@ set -euo pipefail
 
 REPO="Kovalenkoyo81/bpimon"
 BASE_URL="https://github.com/$REPO/releases/latest/download"
-RAW_URL="https://raw.githubusercontent.com/$REPO/main"
 
 # ── root check ────────────────────────────────────────────────────────────────
 if [ "$(id -u)" != "0" ]; then
@@ -64,12 +63,38 @@ if [ -z "$CHATID" ]; then
   exit 1
 fi
 
-# ── download binary ───────────────────────────────────────────────────────────
-echo "→ Detected architecture: $ARCH → downloading $BIN"
-curl -fsSL --progress-bar "$BASE_URL/$BIN" -o /tmp/bpimon_new
-chmod +x /tmp/bpimon_new
+# ── download and verify ───────────────────────────────────────────────────────
+# Binary, unit and config example all come from the same release and are
+# checked against its sha256sums.txt before anything is installed.
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
 
-VERSION=$(/tmp/bpimon_new -version 2>/dev/null || echo "unknown")
+echo "→ Detected architecture: $ARCH → downloading $BIN"
+curl -fsSL "$BASE_URL/sha256sums.txt" -o "$TMP/sha256sums.txt"
+curl -fsSL --progress-bar "$BASE_URL/$BIN" -o "$TMP/$BIN"
+curl -fsSL "$BASE_URL/bpimon.service" -o "$TMP/bpimon.service"
+curl -fsSL "$BASE_URL/config.yaml.example" -o "$TMP/config.yaml.example"
+
+verify() {
+  local file=$1 expected
+  expected=$(awk -v f="$file" '$2 == f { print $1 }' "$TMP/sha256sums.txt")
+  if [ -z "$expected" ]; then
+    echo "Error: no checksum for $file in sha256sums.txt" >&2
+    exit 1
+  fi
+  if ! echo "$expected  $TMP/$file" | sha256sum -c --quiet - >/dev/null 2>&1; then
+    echo "Error: checksum mismatch for $file — download corrupted or tampered" >&2
+    exit 1
+  fi
+}
+
+echo "→ Verifying checksums"
+for f in "$BIN" bpimon.service config.yaml.example; do
+  verify "$f"
+done
+
+chmod +x "$TMP/$BIN"
+VERSION=$("$TMP/$BIN" -version 2>/dev/null || echo "unknown")
 
 # ── install ───────────────────────────────────────────────────────────────────
 echo "→ Installing bpimon ($VERSION)"
@@ -77,14 +102,14 @@ echo "→ Installing bpimon ($VERSION)"
 systemctl stop bpimon 2>/dev/null || true
 
 mkdir -p /etc/bpimon /var/lib/bpimon
-mv /tmp/bpimon_new /usr/local/bin/bpimon
+install -m 755 "$TMP/$BIN" /usr/local/bin/bpimon
 restorecon -v /usr/local/bin/bpimon 2>/dev/null || true
 
 # ── config ────────────────────────────────────────────────────────────────────
 # Install the example config only on first install — never overwrite existing config.
 if [ ! -f /etc/bpimon/config.yaml ]; then
   echo "→ Installing default config at /etc/bpimon/config.yaml"
-  curl -fsSL "$RAW_URL/config.yaml.example" -o /etc/bpimon/config.yaml
+  install -m 644 "$TMP/config.yaml.example" /etc/bpimon/config.yaml
   SHOW_CONFIG_NOTICE=true
 else
   echo "→ Config already exists at /etc/bpimon/config.yaml — keeping as-is"
@@ -99,7 +124,7 @@ chmod 600 /etc/bpimon/env
 
 # ── systemd unit ──────────────────────────────────────────────────────────────
 echo "→ Installing systemd unit"
-curl -fsSL "$RAW_URL/deploy/bpimon.service" -o /etc/systemd/system/bpimon.service
+install -m 644 "$TMP/bpimon.service" /etc/systemd/system/bpimon.service
 
 systemctl daemon-reload
 systemctl enable bpimon

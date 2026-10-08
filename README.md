@@ -36,6 +36,7 @@ Monitors CPU, RAM, disk, SMART drives, SD cards, and Docker containers. Sends al
 ### Option A: install script (recommended, no Go required)
 
 Detects your architecture automatically, downloads the binary, and sets up the systemd service in one command.
+The binary, systemd unit and config example come from the same release and are verified against its `sha256sums.txt` before anything is installed.
 
 ```bash
 export BPIMON_TELEGRAM_TOKEN=your_bot_token
