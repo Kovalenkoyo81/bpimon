@@ -23,9 +23,11 @@ func (m mockProvider) Status() (string, error) { return m.status, nil }
 // mockDockerProvider satisfies monitor.ContainerProvider without calling docker.
 type mockDockerProvider struct{ container string }
 
-func (m mockDockerProvider) Name() string            { return "Docker " + m.container }
-func (m mockDockerProvider) Status() (string, error) { return "🐳 " + m.container + " — ✅ running", nil }
-func (m mockDockerProvider) ContainerName() string   { return m.container }
+func (m mockDockerProvider) Name() string { return "Docker " + m.container }
+func (m mockDockerProvider) Status() (string, error) {
+	return "🐳 " + m.container + " — ✅ running", nil
+}
+func (m mockDockerProvider) ContainerName() string { return m.container }
 
 // mockSender is thread-safe — needed because execute() writes from a goroutine.
 type mockSender struct {

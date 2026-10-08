@@ -61,9 +61,9 @@ var cpuThermalKeywords = []string{
 	"soc",
 	"ap",
 	"arm",
-	"pkg",          // matches x86_pkg_temp if not already caught
-	"core",         // coretemp (Intel per-die) or core zones
-	"acpi",         // acpitz — broad fallback, lower priority
+	"pkg",  // matches x86_pkg_temp if not already caught
+	"core", // coretemp (Intel per-die) or core zones
+	"acpi", // acpitz — broad fallback, lower priority
 }
 
 func (c *CPU) TempC() (float64, error) {

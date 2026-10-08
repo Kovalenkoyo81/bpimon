@@ -31,7 +31,6 @@ type DockerReader interface {
 	ContainerName() string
 }
 
-
 // Provider is the bot/UI interface for all metric sources.
 type Provider interface {
 	Name() string

@@ -15,7 +15,7 @@ type stubAlert struct {
 	msg    string
 }
 
-func (s *stubAlert) Name() string         { return s.name }
+func (s *stubAlert) Name() string          { return s.name }
 func (s *stubAlert) Check() (bool, string) { return s.firing, s.msg }
 
 // collectingNotifier captures sent messages.
