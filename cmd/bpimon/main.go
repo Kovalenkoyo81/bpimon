@@ -3,10 +3,12 @@ package main
 import (
 	"bpimon/internal/alert"
 	"bpimon/internal/bot"
+	"bpimon/internal/buildinfo"
 	"bpimon/internal/config"
 	"bpimon/internal/log"
 	"bpimon/internal/monitor"
 	"bpimon/internal/notifier"
+	"bpimon/internal/update"
 	"context"
 	"errors"
 	"flag"
@@ -17,6 +19,13 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+const (
+	githubRepo          = "Kovalenkoyo81/bpimon"
+	updateCheckInterval = 24 * time.Hour
 )
 
 // Set via -ldflags at build time.
@@ -52,20 +61,44 @@ func main() {
 
 	providers := monitor.NewProviders(cfg.Devices.Smart, cfg.Devices.MMC, cfg.Devices.Docker)
 
+	updates := update.NewGitHub(githubRepo)
 	handler := bot.Handler{
 		Providers: providers,
 		Admins:    cfg.Telegram.Admins,
+		Version:   &bot.VersionReporter{Build: buildinfo.New(version, buildDate), Updates: updates},
 	}
 	handler.InitPermissions()
 
+	alerts := alert.FromProviders(providers, cfg.Thresholds)
+
+	manager := alert.NewManager(
+		alerts,
+		ntf,
+		time.Duration(cfg.Thresholds.IntervalMin)*time.Minute,
+		time.Duration(cfg.Thresholds.CooldownMin)*time.Minute,
+	)
+	handler.Silencer = manager
+
+	if *statePath != "" {
+		manager.SetStatePath(*statePath)
+	}
+
+	callbacks := bot.CallbackHandler{Resolver: manager, IsAdmin: handler.IsAdmin}
+
 	if botInstance != nil {
-		handler.SendRebootAlert(botInstance)
+		watcher := &update.Watcher{Source: updates, Current: version, Notifier: botInstance, Interval: updateCheckInterval}
+		watcher.MarkAnnounced(handler.SendStartupMessage(botInstance))
+		go watcher.Run(context.Background())
 		handler.SendInitialStatus(botInstance)
 		handler.SendCommandsMenu(botInstance)
 
 		go func() {
 			for {
 				for update := range botInstance.UpdatesChan() {
+					if cq := update.CallbackQuery; cq != nil {
+						handleCallback(botInstance, &callbacks, cq, cfg.Telegram.ChatID)
+						continue
+					}
 					if update.Message == nil {
 						continue
 					}
@@ -84,28 +117,50 @@ func main() {
 		}()
 	}
 
-	alerts := alert.FromProviders(providers, cfg.Thresholds)
-
-	manager := alert.NewManager(
-		alerts,
-		ntf,
-		time.Duration(cfg.Thresholds.IntervalMin)*time.Minute,
-		time.Duration(cfg.Thresholds.CooldownMin)*time.Minute,
-	)
-	handler.Silencer = manager
-
-	if *statePath != "" {
-		manager.SetStatePath(*statePath)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
-	go manager.Run(ctx)
+	managerDone := make(chan struct{})
+	go func() {
+		manager.Run(ctx)
+		close(managerDone)
+	}()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	log.Info.Println("Shutting down...")
 	cancel()
+	// Let the manager save alert state before the process exits.
+	select {
+	case <-managerDone:
+	case <-time.After(5 * time.Second):
+		log.Warn.Println("alert manager did not stop in 5s")
+	}
+}
+
+// handleCallback processes an inline-button press from the configured chat.
+func handleCallback(b *bot.Bot, h *bot.CallbackHandler, cq *tgbotapi.CallbackQuery, chatID int64) {
+	log.Info.Printf("callback received: data=%q from=%d", cq.Data, cq.From.ID)
+	if cq.Message == nil || cq.Message.Chat.ID != chatID {
+		log.Warn.Printf("callback ignored: not from the configured chat")
+		if err := b.AnswerCallback(cq.ID, ""); err != nil {
+			log.Warn.Printf("answer callback: %v", err)
+		}
+		return
+	}
+	who := cq.From.FirstName
+	if cq.From.UserName != "" {
+		who = "@" + cq.From.UserName
+	}
+	res := h.Handle(cq.Data, cq.From.ID, who)
+	log.Info.Printf("callback %q from %d: %s", cq.Data, cq.From.ID, res.Toast)
+	if err := b.AnswerCallback(cq.ID, res.Toast); err != nil {
+		log.Warn.Printf("answer callback: %v", err)
+	}
+	if res.Note != "" {
+		if err := b.EditText(cq.Message.MessageID, cq.Message.Text+"\n\n"+res.Note); err != nil {
+			log.Warn.Printf("edit message: %v", err)
+		}
+	}
 }
 
 // connectTelegram retries bot.New with linear backoff until the connection succeeds.

@@ -2,6 +2,7 @@ package bot
 
 import (
 	"bpimon/internal/alert"
+	"bpimon/internal/buildinfo"
 	"bpimon/internal/log"
 	"bpimon/internal/monitor"
 	"bpimon/internal/notifier"
@@ -25,6 +26,7 @@ type Handler struct {
 	Providers []monitor.Provider
 	Admins    []int64
 	Silencer  alert.Silencer
+	Version   *VersionReporter
 
 	canReboot   bool
 	canPoweroff bool
@@ -45,7 +47,8 @@ func checkCommand(cmd string) bool {
 	return err == nil
 }
 
-func (h *Handler) isAdmin(id int64) bool {
+// IsAdmin reports whether id is listed in Admins.
+func (h *Handler) IsAdmin(id int64) bool {
 	for _, a := range h.Admins {
 		if a == id {
 			return true
@@ -75,7 +78,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 	}
 
 	if strings.HasPrefix(command, "/restart_") {
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can restart containers"
 		}
 		container := h.findContainerByNormalized(command[len("/restart_"):])
@@ -93,6 +96,12 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 
 	case "/status":
 		return h.collectByPrefix("")
+
+	case "/version":
+		if h.Version == nil {
+			return "Version info unavailable"
+		}
+		return h.Version.Report()
 
 	case "/cpu":
 		return h.collectByName("CPU")
@@ -119,7 +128,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return h.collectByPrefix("docker")
 
 	case "/restart":
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can restart containers"
 		}
 		if len(parts) >= 2 {
@@ -144,7 +153,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return "Available containers:\n" + strings.Join(names, "\n")
 
 	case "/silence":
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can manage alert silence"
 		}
 		if h.Silencer == nil {
@@ -184,7 +193,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return "⚠️ Invalid or expired code"
 
 	case "/reboot":
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can reboot the server"
 		}
 		if !h.canReboot {
@@ -194,7 +203,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return fmt.Sprintf("🔐 Type `/confirm %s` within 60 seconds to confirm reboot.", code)
 
 	case "/poweroff":
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can power off the server"
 		}
 		if !h.canPoweroff {
@@ -204,7 +213,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return fmt.Sprintf("🔐 Type `/confirm %s` within 60 seconds to confirm poweroff.", code)
 
 	default:
-		return "Commands: /status /cpu /ram /disk /smart /sd /docker /restart <container> /reboot /poweroff /silence <min>|off"
+		return "Commands: /status /cpu /ram /disk /smart /sd /docker /restart <container> /reboot /poweroff /silence <min>|off /version"
 	}
 }
 
@@ -317,27 +326,41 @@ func (h *Handler) collectByPrefix(prefix string) string {
 
 const rebootFlagFile = "/tmp/bpimon.booted"
 
-func (h *Handler) SendRebootAlert(s notifier.Notifier) {
+// SendStartupMessage announces the bot start with its version, notes a
+// recent system reboot, and mentions a newer release if one exists.
+// It returns the release tag it announced, if any.
+func (h *Handler) SendStartupMessage(s notifier.Notifier) string {
+	reboot := systemRebootUptime()
+	if h.Version == nil {
+		if reboot > 0 {
+			_ = s.Send("🔁 Bot started after system reboot\n⏱ System uptime: " + buildinfo.FormatDuration(reboot))
+		}
+		return ""
+	}
+	msg, announced := h.Version.Startup(reboot)
+	_ = s.Send(msg)
+	return announced
+}
+
+// systemRebootUptime returns the system uptime if the bot is starting for
+// the first time since a reboot less than 5 minutes ago, or 0 otherwise.
+func systemRebootUptime() time.Duration {
 	b, err := os.ReadFile("/proc/uptime")
 	if err != nil {
-		return
+		return 0
 	}
 	var uptimeSec float64
 	fmt.Sscanf(string(b), "%f", &uptimeSec)
 	if uptimeSec >= 300 {
-		return
+		return 0
 	}
 	// Flag file lives in /tmp (cleared on every real reboot).
-	// If it already exists, this is a manual bot restart — skip alert.
+	// If it already exists, this is a manual bot restart — not a reboot.
 	if _, err := os.Stat(rebootFlagFile); err == nil {
-		return
+		return 0
 	}
 	_ = os.WriteFile(rebootFlagFile, []byte{}, 0600)
-
-	d := time.Duration(uptimeSec) * time.Second
-	min := int(d.Minutes())
-	sec := int(d.Seconds()) % 60
-	_ = s.Send(fmt.Sprintf("🔁 Bot started after system reboot\n⏱ System uptime: %dm %ds", min, sec))
+	return time.Duration(uptimeSec * float64(time.Second))
 }
 
 func (h *Handler) SendInitialStatus(s notifier.Notifier) {
@@ -371,6 +394,7 @@ func (h *Handler) buildCommandsMenu() string {
 	b.WriteString("/silence <min> — silence alerts (e.g. /silence 30)\n")
 	b.WriteString("/silence off — resume alerts\n")
 	b.WriteString("/silence — show silence status\n")
+	b.WriteString("/version — bpimon version & updates\n")
 	b.WriteString("/help — show this menu")
 	return b.String()
 }

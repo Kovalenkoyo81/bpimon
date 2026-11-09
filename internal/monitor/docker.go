@@ -1,10 +1,18 @@
 package monitor
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 )
+
+// ErrDaemonUnavailable means the docker CLI could not talk to the daemon,
+// so the container's real state is unknown.
+var ErrDaemonUnavailable = errors.New("docker daemon unavailable")
+
+// StatusRemoved is reported for a container that no longer exists.
+const StatusRemoved = "removed"
 
 const DockerAutoDiscover = "bpi-auto-discover"
 
@@ -40,7 +48,15 @@ func (d Docker) Available() bool       { _, err := exec.LookPath("docker"); retu
 func (d Docker) Health() (DockerHealth, error) {
 	out, err := exec.Command("docker", "inspect", "--format", "{{.State.Status}}", d.Container).Output()
 	if err != nil {
-		return DockerHealth{}, fmt.Errorf("docker inspect %s: %w", d.Container, err)
+		var stderr string
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			stderr = strings.TrimSpace(string(ee.Stderr))
+		}
+		if isNoSuchContainer(stderr) {
+			return DockerHealth{Container: d.Container, Status: StatusRemoved}, nil
+		}
+		return DockerHealth{}, fmt.Errorf("%w: docker inspect %s: %v %s", ErrDaemonUnavailable, d.Container, err, stderr)
 	}
 	status := strings.TrimSpace(string(out))
 	return DockerHealth{
@@ -48,6 +64,13 @@ func (d Docker) Health() (DockerHealth, error) {
 		Status:    status,
 		Running:   status == "running",
 	}, nil
+}
+
+// isNoSuchContainer recognises docker's "container does not exist" errors:
+// "Error: no such object: x" (CLI) and "No such container: x" (daemon).
+func isNoSuchContainer(stderr string) bool {
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "no such object") || strings.Contains(s, "no such container")
 }
 
 func (d Docker) Status() (string, error) {

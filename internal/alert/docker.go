@@ -15,13 +15,25 @@ func NewDocker(d monitor.DockerReader) *Docker {
 
 func (a *Docker) Name() string { return "Docker " + a.d.ContainerName() }
 
+// Choices: a stopped container may have been stopped on purpose, so ask.
+func (a *Docker) Choices() (intentional, incident string) {
+	return "✋ Stopped by admin", "💥 Crashed"
+}
+
 func (a *Docker) Check() (bool, string) {
+	v, msg := a.Evaluate()
+	return v == Firing, msg
+}
+
+// Evaluate returns Unknown when the daemon cannot be reached: the container's
+// state is not known, and the DockerDaemon alert reports the outage instead.
+func (a *Docker) Evaluate() (Verdict, string) {
 	h, err := a.d.Health()
 	if err != nil {
-		return false, ""
+		return Unknown, ""
 	}
 	if !h.Running {
-		return true, fmt.Sprintf("%q is %s", h.Container, h.Status)
+		return Firing, fmt.Sprintf("%q is %s", h.Container, h.Status)
 	}
-	return false, ""
+	return Clear, ""
 }
