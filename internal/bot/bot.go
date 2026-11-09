@@ -3,15 +3,14 @@ package bot
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"net/url"
 	"time"
 
-	"log/slog"
-
-	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 type Bot struct {
@@ -27,45 +26,35 @@ func New(token string, chatID int64) (*Bot, error) {
 	return &Bot{api: api, chatID: chatID}, nil
 }
 
-// Send sends a plain message. Failures are logged here, so callers that
+// Send sends an HTML message. Failures are logged here, so callers that
 // cannot do anything about them may ignore the error.
-func (b *Bot) Send(text string) error {
-	_, err := b.api.Send(tgbotapi.NewMessage(b.chatID, text))
+func (b *Bot) Send(msg format.HTML) error {
+	_, err := b.api.Send(b.newMessage(msg))
 	return logSendErr("send message", err)
 }
 
-func logSendErr(what string, err error) error {
+// SendWithButtons sends an HTML message with one row of inline buttons and
+// returns the message ID.
+func (b *Bot) SendWithButtons(msg format.HTML, buttons []notifier.Button) (int, error) {
+	m := b.newMessage(msg)
+	m.ReplyMarkup = keyboard(buttons)
+	sent, err := b.api.Send(m)
 	if err != nil {
-		slog.Error("telegram request failed", "op", what, "err", err)
-	}
-	return err
-}
-
-func (b *Bot) SendAlert(text string) error {
-	return b.Send(alertStamp() + text)
-}
-
-// SendAlertWithButtons sends a timestamped alert with one row of inline
-// buttons and returns the message ID.
-func (b *Bot) SendAlertWithButtons(text string, buttons []notifier.Button) (int, error) {
-	row := make([]tgbotapi.InlineKeyboardButton, 0, len(buttons))
-	for _, btn := range buttons {
-		row = append(row, tgbotapi.NewInlineKeyboardButtonData(btn.Text, btn.Data))
-	}
-	msg := tgbotapi.NewMessage(b.chatID, alertStamp()+text)
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(row)
-	sent, err := b.api.Send(msg)
-	if err != nil {
-		return 0, logSendErr("send alert with buttons", err)
+		return 0, logSendErr("send message with buttons", err)
 	}
 	return sent.MessageID, nil
 }
 
 // ClearButtons removes the inline keyboard from a message, keeping its text.
 func (b *Bot) ClearButtons(messageID int) error {
-	empty := tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}}
-	_, err := b.api.Request(tgbotapi.NewEditMessageReplyMarkup(b.chatID, messageID, empty))
-	return err
+	return b.setKeyboard(messageID, nil)
+}
+
+// SetStatusButton replaces a message's buttons with a single button that
+// shows the outcome (e.g. who answered). The message text and its
+// formatting stay untouched.
+func (b *Bot) SetStatusButton(messageID int, text, data string) error {
+	return b.setKeyboard(messageID, []notifier.Button{{Text: text, Data: data}})
 }
 
 // AnswerCallback acknowledges a button press; non-empty text is shown as a toast.
@@ -74,14 +63,34 @@ func (b *Bot) AnswerCallback(callbackID, text string) error {
 	return err
 }
 
-// EditText replaces a message's text and removes its inline buttons.
-func (b *Bot) EditText(messageID int, text string) error {
-	_, err := b.api.Send(tgbotapi.NewEditMessageText(b.chatID, messageID, text))
+func (b *Bot) newMessage(msg format.HTML) tgbotapi.MessageConfig {
+	m := tgbotapi.NewMessage(b.chatID, msg.String())
+	m.ParseMode = tgbotapi.ModeHTML
+	return m
+}
+
+func (b *Bot) setKeyboard(messageID int, buttons []notifier.Button) error {
+	_, err := b.api.Request(tgbotapi.NewEditMessageReplyMarkup(b.chatID, messageID, keyboard(buttons)))
 	return err
 }
 
-func alertStamp() string {
-	return fmt.Sprintf("🕐 %s UTC\n\n", time.Now().UTC().Format("02 Jan 2006, 15:04"))
+// keyboard builds a one-row inline keyboard; nil buttons give an empty one.
+func keyboard(buttons []notifier.Button) tgbotapi.InlineKeyboardMarkup {
+	if len(buttons) == 0 {
+		return tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}}
+	}
+	row := make([]tgbotapi.InlineKeyboardButton, 0, len(buttons))
+	for _, btn := range buttons {
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(btn.Text, btn.Data))
+	}
+	return tgbotapi.NewInlineKeyboardMarkup(row)
+}
+
+func logSendErr(what string, err error) error {
+	if err != nil {
+		slog.Error("telegram request failed", "op", what, "err", err)
+	}
+	return err
 }
 
 // allowedUpdates is sent explicitly on every getUpdates call. Without it

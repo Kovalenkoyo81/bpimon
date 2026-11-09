@@ -44,7 +44,7 @@ func TestUsageBetween(t *testing.T) {
 	}
 }
 
-func TestStatusDoesNotShiftAlertBaseline(t *testing.T) {
+func TestSampleDoesNotShiftAlertBaseline(t *testing.T) {
 	c, f := newFakeCPU(20)
 	if _, err := c.Usage(); err != nil { // baseline
 		t.Fatal(err)
@@ -54,11 +54,11 @@ func TestStatusDoesNotShiftAlertBaseline(t *testing.T) {
 	f.mu.Lock()
 	f.busy = 90
 	f.mu.Unlock()
-	if _, err := c.Status(); err != nil {
+	if _, err := c.Sample(); err != nil {
 		t.Fatal(err)
 	}
 	if c.prev != baseline {
-		t.Fatalf("Status changed the alert baseline: %+v → %+v", baseline, c.prev)
+		t.Fatalf("Sample changed the alert baseline: %+v → %+v", baseline, c.prev)
 	}
 }
 
@@ -68,7 +68,7 @@ func TestCPUConcurrentUse(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		wg.Add(2)
 		go func() { defer wg.Done(); _, _ = c.Usage() }()
-		go func() { defer wg.Done(); _, _ = c.Status() }()
+		go func() { defer wg.Done(); _, _ = c.Sample() }()
 	}
 	wg.Wait()
 }

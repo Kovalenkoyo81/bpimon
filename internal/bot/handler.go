@@ -19,6 +19,7 @@ type SystemActions interface {
 
 // HandlerConfig lists the Handler's dependencies.
 type HandlerConfig struct {
+	Host      string // machine name shown in /status
 	Providers []monitor.Provider
 	Admins    []int64
 	Silencer  alert.Silencer   // nil: /silence unavailable
@@ -28,6 +29,7 @@ type HandlerConfig struct {
 
 // Handler turns chat commands into responses.
 type Handler struct {
+	host      string
 	providers []monitor.Provider
 	admins    []int64
 	silencer  alert.Silencer
@@ -40,6 +42,7 @@ type Handler struct {
 
 func NewHandler(c HandlerConfig) *Handler {
 	return &Handler{
+		host:      c.Host,
 		providers: c.Providers,
 		admins:    c.Admins,
 		silencer:  c.Silencer,

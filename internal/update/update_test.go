@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 )
 
 func TestIsNewer(t *testing.T) {
@@ -89,9 +91,9 @@ type sink struct {
 	msgs []string
 }
 
-func (s *sink) Send(t string) error {
+func (s *sink) Send(m format.HTML) error {
 	s.mu.Lock()
-	s.msgs = append(s.msgs, t)
+	s.msgs = append(s.msgs, m.String())
 	s.mu.Unlock()
 	return nil
 }
@@ -134,14 +136,31 @@ func TestWatcherSkipsAlreadyShownAndOldAndErrors(t *testing.T) {
 	}
 }
 
-func TestTrimNotes(t *testing.T) {
+func TestRenderNotesLimitsLines(t *testing.T) {
 	var lines []string
 	for i := 0; i < 30; i++ {
 		lines = append(lines, "line", "")
 	}
-	got := trimNotes(strings.Join(lines, "\r\n"))
+	got := renderNotes(strings.Join(lines, "\r\n")).String()
 	n := strings.Count(got, "\n") + 1
 	if n != maxNotesLines+1 || !strings.HasSuffix(got, "…") {
 		t.Fatalf("expected %d lines ending with …, got %d: %q", maxNotesLines+1, n, got)
+	}
+}
+
+func TestRenderNotesMarkdown(t *testing.T) {
+	got := renderNotes("### Fixed\n\n- **Buttons** work with `<x>`\nplain & text").String()
+	want := "<b>Fixed</b>\n• Buttons work with &lt;x&gt;\nplain &amp; text"
+	if got != want {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+}
+
+func TestAnnouncement(t *testing.T) {
+	got := Announcement(Release{Tag: "v1.8.0", URL: "https://x/r?a=1&b=2", Notes: "### Added\n- thing"}, "v1.7.1").String()
+	for _, want := range []string{"🆕 <b>bpimon v1.8.0 is available</b>", "running v1.7.1", `href="https://x/r?a=1&amp;b=2"`, "<b>Added</b>", "• thing"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("announcement missing %q:\n%s", want, got)
+		}
 	}
 }

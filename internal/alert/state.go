@@ -13,6 +13,7 @@ type managerState struct {
 	LastSent   map[string]time.Time  `json:"last_sent"`
 	Resolution map[string]Resolution `json:"resolution,omitempty"`
 	Question   map[string]int        `json:"question_msg,omitempty"`
+	Since      map[string]time.Time  `json:"since,omitempty"`
 }
 
 func (m *Manager) loadState() {
@@ -44,6 +45,9 @@ func (m *Manager) loadState() {
 	if s.Question != nil {
 		m.question = s.Question
 	}
+	if s.Since != nil {
+		m.since = s.Since
+	}
 	m.mu.Unlock()
 	slog.Info("alert state loaded", "path", m.statePath)
 }
@@ -60,6 +64,7 @@ func (m *Manager) saveState() {
 		LastSent:   m.lastSent,
 		Resolution: m.resolution,
 		Question:   m.question,
+		Since:      m.since,
 	})
 	m.mu.Unlock()
 	if err != nil {

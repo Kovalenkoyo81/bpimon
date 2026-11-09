@@ -1,22 +1,22 @@
 package bot
 
 import (
+	"log/slog"
 	"strings"
 
-	"log/slog"
-
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
-const usageHint = "Commands: /status /cpu /ram /disk /smart /sd /docker /restart <container> /reboot /poweroff /silence <min>|off /version"
+const usageHint = "Commands: /status /cpu /ram /disk /smart /sd /docker /restart <container> /reboot /poweroff /silence <min>|off /version — /help for details"
 
 // Handle parses a chat message from userID and returns the response
-// ("" for none). s receives asynchronous follow-up messages.
-func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string {
+// (zero HTML for none). s receives asynchronous follow-up messages.
+func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) format.HTML {
 	args := parseCommand(text)
 	if len(args) == 0 {
-		return ""
+		return format.HTML{}
 	}
 	command := args[0]
 
@@ -24,7 +24,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 
 	if !h.limiter.Allow(userID) {
 		slog.Warn("rate limit exceeded", "cmd", command, "user", userID)
-		return ""
+		return format.HTML{}
 	}
 
 	if name, ok := strings.CutPrefix(command, "/restart_"); ok {
@@ -32,10 +32,10 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 	}
 
 	switch command {
-	case "/help":
+	case "/help", "/start":
 		return h.buildCommandsMenu()
 	case "/status":
-		return h.collect()
+		return h.statusReport()
 	case "/version":
 		return h.cmdVersion()
 	case "/cpu":
@@ -46,15 +46,18 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return h.collect(monitor.KindDisk)
 	case "/sd":
 		if !h.has(monitor.KindSD) {
-			return "No SD cards detected on this system"
+			return format.Text("No SD cards detected on this system")
 		}
 		return h.collect(monitor.KindSD)
 	case "/smart":
 		if !h.has(monitor.KindSmart) {
-			return "⚠️ SMART unavailable: smartctl not found"
+			return format.Text("⚠️ SMART unavailable: smartctl not found")
 		}
 		return h.collect(monitor.KindSmart)
 	case "/docker":
+		if !h.has(monitor.KindDocker) {
+			return format.Text("Docker monitoring is not configured")
+		}
 		return h.collect(monitor.KindDocker)
 	case "/restart":
 		return h.cmdRestart(args[1:], userID)
@@ -67,7 +70,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 	case "/poweroff":
 		return h.cmdPoweroff(userID)
 	default:
-		return usageHint
+		return format.Text(usageHint)
 	}
 }
 
@@ -87,9 +90,9 @@ func parseCommand(text string) []string {
 	return args
 }
 
-func (h *Handler) cmdVersion() string {
+func (h *Handler) cmdVersion() format.HTML {
 	if h.version == nil {
-		return "Version info unavailable"
+		return format.Text("Version info unavailable")
 	}
 	return h.version.Report()
 }

@@ -20,11 +20,3 @@ func (DockerDaemon) Ping() (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
-
-func (d DockerDaemon) Status() (string, error) {
-	v, err := d.Ping()
-	if err != nil {
-		return "🐳 Docker daemon — ❌ unavailable", nil
-	}
-	return "🐳 Docker daemon — ✅ " + v, nil
-}

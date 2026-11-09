@@ -2,7 +2,6 @@ package monitor
 
 import (
 	"bufio"
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -47,17 +46,4 @@ func (Disk) Usage() ([]DiskUsage, error) {
 		})
 	}
 	return res, nil
-}
-
-func (d Disk) Status() (string, error) {
-	ds, err := d.Usage()
-	if err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	for _, du := range ds {
-		fmt.Fprintf(&b, "💾 %s(%s):%d%%(%.1fGB/%.1fGB)\n",
-			du.Device, du.Mount, du.UsedPct, du.UsedGB, du.TotalGB)
-	}
-	return b.String(), nil
 }

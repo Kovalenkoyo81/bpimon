@@ -1,11 +1,11 @@
-package buildinfo
+package format
 
 import (
 	"testing"
 	"time"
 )
 
-func TestFormatDuration(t *testing.T) {
+func TestDuration(t *testing.T) {
 	cases := map[time.Duration]string{
 		7 * time.Second:               "7s",
 		4*time.Minute + 5*time.Second: "4m 5s",
@@ -14,8 +14,8 @@ func TestFormatDuration(t *testing.T) {
 		1500 * time.Millisecond:       "2s",
 	}
 	for d, want := range cases {
-		if got := FormatDuration(d); got != want {
-			t.Errorf("FormatDuration(%v) = %q, want %q", d, got, want)
+		if got := Duration(d); got != want {
+			t.Errorf("Duration(%v) = %q, want %q", d, got, want)
 		}
 	}
 }

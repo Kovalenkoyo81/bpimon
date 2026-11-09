@@ -1,15 +1,15 @@
 package notifier
 
-import "fmt"
+import (
+	"fmt"
 
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
+)
+
+// Dummy prints messages to stdout; used when Telegram is disabled.
 type Dummy struct{}
 
-func (Dummy) Send(text string) error {
-	fmt.Println(text)
-	return nil
-}
-
-func (Dummy) SendAlert(text string) error {
-	fmt.Println("[ALERT] " + text)
+func (Dummy) Send(msg format.HTML) error {
+	fmt.Println(msg.String())
 	return nil
 }

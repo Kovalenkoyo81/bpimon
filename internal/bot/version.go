@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Kovalenkoyo81/bpimon/internal/buildinfo"
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/update"
 )
 
@@ -35,34 +36,50 @@ func (v *VersionReporter) newerRelease() (update.Release, bool) {
 // Startup builds the first message after the bot starts. rebootUptime > 0
 // means the bot started right after a system reboot. It returns the release
 // tag it announced, if any.
-func (v *VersionReporter) Startup(rebootUptime time.Duration) (msg, announced string) {
-	msg = "🤖 bpimon " + v.Build.Version + " started"
+//
+//	🤖 bpimon v1.8.0 started · bananapipro
+//	🔁 after system reboot, uptime 1m 12s
+//	🆕 v1.9.0 available · release notes
+func (v *VersionReporter) Startup(host string, rebootUptime time.Duration) (msg format.HTML, announced string) {
+	head := format.Concat(format.Text("🤖 "), format.Bold("bpimon "+v.Build.Version+" started"))
+	if host != "" {
+		head = format.Concat(head, format.Text(" · "+host))
+	}
+	var reboot, avail format.HTML
 	if rebootUptime > 0 {
-		msg += "\n🔁 After system reboot, uptime " + buildinfo.FormatDuration(rebootUptime)
+		reboot = format.Text("🔁 after system reboot, uptime " + format.Duration(rebootUptime))
 	}
 	if r, ok := v.newerRelease(); ok {
-		msg += "\n🆕 " + r.Tag + " available: " + r.URL
+		avail = newerLine(r)
 		announced = r.Tag
 	}
-	return msg, announced
+	return format.Lines(head, reboot, avail), announced
 }
 
 // Report is the /version response.
-func (v *VersionReporter) Report() string {
-	msg := "🤖 bpimon " + v.Build.Version +
-		"\n🏗 Built " + v.Build.BuildDate + ", " + v.Build.Platform() +
-		"\n⏱ Up " + v.Build.Uptime()
+//
+//	🤖 bpimon v1.8.0
+//	built 2026-11-09 · linux/arm · up 3h 12m
+//	✅ latest release
+func (v *VersionReporter) Report() format.HTML {
+	head := format.Concat(format.Text("🤖 "), format.Bold("bpimon "+v.Build.Version))
+	details := format.Text("built " + v.Build.BuildDate + " · " + v.Build.Platform() + " · up " + v.Build.Uptime())
 	if v.Updates == nil {
-		return msg
+		return format.Lines(head, details)
 	}
 	r, ok := v.newerRelease()
+	var status format.HTML
 	switch {
 	case ok:
-		msg += "\n🆕 " + r.Tag + " available: " + r.URL
+		status = newerLine(r)
 	case r.Tag != "":
-		msg += "\n✅ Latest release: " + r.Tag
+		status = format.Fmt("✅ latest release is %s", format.Code(r.Tag))
 	default:
-		msg += "\n⚠️ Could not check for updates"
+		status = format.Text("⚠️ could not check for updates")
 	}
-	return msg
+	return format.Lines(head, details, status)
+}
+
+func newerLine(r update.Release) format.HTML {
+	return format.Fmt(`🆕 <b>%s</b> available · <a href="%s">release notes</a>`, r.Tag, r.URL)
 }

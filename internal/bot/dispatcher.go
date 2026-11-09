@@ -5,14 +5,16 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
+
 	"log/slog"
 )
 
 // chatAPI is the part of the Telegram client the dispatcher needs.
 type chatAPI interface {
-	Send(text string) error
+	Send(msg format.HTML) error
 	AnswerCallback(callbackID, text string) error
-	EditText(messageID int, text string) error
+	SetStatusButton(messageID int, text, data string) error
 }
 
 // Dispatcher routes incoming Telegram updates from the configured chat:
@@ -58,10 +60,10 @@ func (d *Dispatcher) handleMessage(m *tgbotapi.Message) {
 		return
 	}
 	response := d.handler.Handle(m.Text, m.From.ID, d.api)
-	if response == "" {
+	if response.IsZero() {
 		return
 	}
-	slog.Debug("response", "len", len(response), "text", response)
+	slog.Debug("response", "len", len(response.String()), "html", response.String())
 	_ = d.api.Send(response)
 }
 
@@ -81,9 +83,9 @@ func (d *Dispatcher) handleCallback(cq *tgbotapi.CallbackQuery) {
 	res := d.callbacks.Handle(cq.Data, cq.From.ID, displayName(cq.From))
 	slog.Info("callback handled", "data", cq.Data, "user", cq.From.ID, "result", res.Toast)
 	d.answer(cq.ID, res.Toast)
-	if res.Note != "" {
-		if err := d.api.EditText(cq.Message.MessageID, cq.Message.Text+"\n\n"+res.Note); err != nil {
-			slog.Warn("edit message failed", "err", err)
+	if res.Status != "" {
+		if err := d.api.SetStatusButton(cq.Message.MessageID, res.Status, AnsweredData); err != nil {
+			slog.Warn("set status button failed", "err", err)
 		}
 	}
 }

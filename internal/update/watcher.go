@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
@@ -58,29 +59,50 @@ func (w *Watcher) check(ctx context.Context) {
 }
 
 // Announcement is the full "new version" message with release notes.
-func Announcement(r Release, current string) string {
-	var b strings.Builder
-	b.WriteString("🆕 bpimon " + r.Tag + " is available (running " + current + ")\n")
-	b.WriteString(r.URL)
-	if notes := trimNotes(r.Notes); notes != "" {
-		b.WriteString("\n\n" + notes)
+//
+//	🆕 bpimon v1.8.0 is available
+//	running v1.7.1 · release notes
+//
+//	Added
+//	• ...
+func Announcement(r Release, current string) format.HTML {
+	head := format.Lines(
+		format.Concat(format.Text("🆕 "), format.Bold("bpimon "+r.Tag+" is available")),
+		format.Fmt(`running %s · <a href="%s">release notes</a>`, current, r.URL),
+	)
+	if notes := renderNotes(r.Notes); !notes.IsZero() {
+		return format.Concat(head, format.Text("\n\n"), notes)
 	}
-	return b.String()
+	return head
 }
 
-// trimNotes keeps the first maxNotesLines non-empty lines of release notes.
-func trimNotes(notes string) string {
-	var kept []string
+// renderNotes turns the first maxNotesLines non-empty lines of Markdown
+// release notes into Telegram HTML: "### X" becomes a bold heading, list
+// items get a bullet, inline Markdown markers are dropped.
+func renderNotes(notes string) format.HTML {
+	var out []format.HTML
 	lines := strings.Split(strings.ReplaceAll(notes, "\r\n", "\n"), "\n")
 	for _, l := range lines {
-		if strings.TrimSpace(l) == "" {
+		l = strings.TrimSpace(l)
+		if l == "" {
 			continue
 		}
-		if len(kept) == maxNotesLines {
-			kept = append(kept, "…")
+		if len(out) == maxNotesLines {
+			out = append(out, format.Text("…"))
 			break
 		}
-		kept = append(kept, l)
+		switch {
+		case strings.HasPrefix(l, "#"):
+			out = append(out, format.Bold(stripMarkdown(strings.TrimLeft(l, "# "))))
+		case strings.HasPrefix(l, "- "), strings.HasPrefix(l, "* "):
+			out = append(out, format.Text("• "+stripMarkdown(l[2:])))
+		default:
+			out = append(out, format.Text(stripMarkdown(l)))
+		}
 	}
-	return strings.Join(kept, "\n")
+	return format.Lines(out...)
 }
+
+var mdMarkers = strings.NewReplacer("**", "", "__", "", "`", "")
+
+func stripMarkdown(s string) string { return mdMarkers.Replace(s) }

@@ -52,12 +52,3 @@ func (Memory) Usage() (MemoryStat, error) {
 		UsedPct: int((used * 100) / total),
 	}, nil
 }
-
-func (m Memory) Status() (string, error) {
-	s, err := m.Usage()
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("🧠 RAM\nTotal: %d MB\nFree: %d MB\nUsed: %d%%",
-		s.TotalMB, s.FreeMB, s.UsedPct), nil
-}

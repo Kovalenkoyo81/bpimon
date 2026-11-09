@@ -56,7 +56,7 @@ func usageBetween(prev, cur cpuTimes) float64 {
 // CPU measures CPU usage and temperature.
 //
 // Usage() is for the alert loop: it reports the average since its previous
-// call (i.e. over the alert interval). Status() is for on-demand commands
+// call (i.e. over the alert interval). Sample() is for on-demand commands
 // and measures its own short window, so /cpu never shifts the alert's
 // baseline. Both are safe for concurrent use.
 type CPU struct {
@@ -86,18 +86,19 @@ func (c *CPU) Usage() (CPUStat, error) {
 	return CPUStat{UsagePct: pct}, nil
 }
 
-// instantUsage samples usage over statusWindow without touching Usage's state.
-func (c *CPU) instantUsage() (float64, error) {
+// Sample measures usage over its own short window (500 ms) without touching
+// Usage's baseline. For on-demand commands.
+func (c *CPU) Sample() (CPUStat, error) {
 	a, err := c.read()
 	if err != nil {
-		return 0, err
+		return CPUStat{}, err
 	}
 	time.Sleep(c.statusWindow)
 	b, err := c.read()
 	if err != nil {
-		return 0, err
+		return CPUStat{}, err
 	}
-	return usageBetween(a, b), nil
+	return CPUStat{UsagePct: usageBetween(a, b)}, nil
 }
 
 // cpuThermalKeywords lists thermal zone type substrings in priority order.
@@ -177,19 +178,4 @@ func TopProcs(n int) string {
 		}
 	}
 	return strings.Join(parts, ", ")
-}
-
-func (c *CPU) Status() (string, error) {
-	pct, err := c.instantUsage()
-	if err != nil {
-		return "", err
-	}
-	line := "🖥 CPU: " + strconv.FormatFloat(pct, 'f', 1, 64) + "%"
-	if t, err := c.TempC(); err == nil {
-		line += fmt.Sprintf(" | %.1f°C", t)
-	}
-	if top := TopProcs(3); top != "" {
-		line += "\n📋 Top: " + top
-	}
-	return line, nil
 }

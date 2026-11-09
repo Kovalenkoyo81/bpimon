@@ -72,15 +72,3 @@ func isNoSuchContainer(stderr string) bool {
 	s := strings.ToLower(stderr)
 	return strings.Contains(s, "no such object") || strings.Contains(s, "no such container")
 }
-
-func (d Docker) Status() (string, error) {
-	h, err := d.Health()
-	if err != nil {
-		return "", err
-	}
-	icon := "✅"
-	if !h.Running {
-		icon = "❌"
-	}
-	return fmt.Sprintf("🐳 %s — %s %s", h.Container, icon, h.Status), nil
-}

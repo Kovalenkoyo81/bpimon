@@ -29,7 +29,7 @@ func TestUnsilenceResumesAlerts(t *testing.T) {
 	m.Unsilence()
 	runTick(m) // resumed — alert fires
 
-	if !n.contains("🚨 CPU") {
+	if !n.contains("🚨 <b>CPU") {
 		t.Fatalf("expected alert after unsilence, got %v", n.all())
 	}
 }

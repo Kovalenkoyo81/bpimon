@@ -26,7 +26,7 @@ func newCB(err error) (*CallbackHandler, *stubResolver) {
 func TestCallbackNonAdminRejected(t *testing.T) {
 	h, res := newCB(nil)
 	out := h.Handle(alert.CallbackData("Docker app", alert.Intentional), 2, "@bob")
-	if out.Note != "" || !strings.Contains(out.Toast, "Only admins") || res.name != "" {
+	if out.Status != "" || !strings.Contains(out.Toast, "Only admins") || res.name != "" {
 		t.Fatalf("non-admin must be rejected without resolving: %+v %+v", out, res)
 	}
 }
@@ -37,15 +37,15 @@ func TestCallbackAdminIntentional(t *testing.T) {
 	if res.name != "Docker app" || res.r != alert.Intentional {
 		t.Fatalf("resolver not called correctly: %+v", res)
 	}
-	if !strings.Contains(out.Note, "@yuri") || !strings.Contains(out.Note, "Stopped by admin") {
-		t.Fatalf("unexpected note: %q", out.Note)
+	if !strings.Contains(out.Status, "@yuri") || !strings.Contains(out.Status, "Stopped by admin") {
+		t.Fatalf("unexpected note: %q", out.Status)
 	}
 }
 
 func TestCallbackAdminIncident(t *testing.T) {
 	h, res := newCB(nil)
 	out := h.Handle(alert.CallbackData("Docker app", alert.Incident), 1, "@yuri")
-	if res.r != alert.Incident || !strings.Contains(out.Note, "crash") {
+	if res.r != alert.Incident || !strings.Contains(out.Status, "Crash") {
 		t.Fatalf("unexpected: %+v %+v", res, out)
 	}
 }
@@ -53,7 +53,7 @@ func TestCallbackAdminIncident(t *testing.T) {
 func TestCallbackAlreadyRecovered(t *testing.T) {
 	h, _ := newCB(alert.ErrNotActive)
 	out := h.Handle(alert.CallbackData("Docker app", alert.Intentional), 1, "@yuri")
-	if !strings.Contains(out.Toast, "back to normal") || out.Note == "" {
+	if !strings.Contains(out.Toast, "back to normal") || out.Status == "" {
 		t.Fatalf("unexpected: %+v", out)
 	}
 }
@@ -61,7 +61,7 @@ func TestCallbackAlreadyRecovered(t *testing.T) {
 func TestCallbackGarbage(t *testing.T) {
 	h, res := newCB(nil)
 	out := h.Handle("nonsense", 1, "@yuri")
-	if out.Note != "" || res.name != "" {
+	if out.Status != "" || res.name != "" {
 		t.Fatalf("garbage must be ignored: %+v", out)
 	}
 }

@@ -1,37 +1,53 @@
 package bot
 
 import (
-	"strings"
-
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
-func (h *Handler) buildCommandsMenu() string {
-	var b strings.Builder
-	b.WriteString("📊 Monitoring:\n")
-	b.WriteString("/status — full system status\n")
-	b.WriteString("/cpu — CPU & temperature\n")
-	b.WriteString("/ram — RAM usage\n")
-	b.WriteString("/disk — disk usage\n")
-	b.WriteString("/smart — SMART disk health\n")
+func (h *Handler) buildCommandsMenu() format.HTML {
+	item := func(cmd, desc string) format.HTML { return format.Text(cmd + " — " + desc) }
+
+	monitoring := []format.HTML{
+		format.Bold("📊 Monitoring"),
+		item("/status", "full system status"),
+		item("/cpu", "CPU & temperature"),
+		item("/ram", "RAM usage"),
+		item("/disk", "disk usage"),
+	}
+	if h.has(monitor.KindSmart) {
+		monitoring = append(monitoring, item("/smart", "SMART disk health"))
+	}
 	if h.has(monitor.KindSD) {
-		b.WriteString("/sd — SD cards\n")
+		monitoring = append(monitoring, item("/sd", "SD cards"))
 	}
-	b.WriteString("\n🐳 Docker:\n")
-	b.WriteString("/docker — container status\n")
-	for _, c := range h.containers() {
-		b.WriteString(restartShortcut(c) + "\n")
+
+	var docker []format.HTML
+	if h.has(monitor.KindDocker) {
+		docker = append(docker, format.Bold("🐳 Docker"), item("/docker", "container status"))
+		for _, c := range h.containers() {
+			docker = append(docker, item(restartShortcut(c), "restart "+c))
+		}
 	}
-	b.WriteString("\n⚙️ System:\n")
-	b.WriteString("/reboot — reboot (confirmation required)\n")
-	b.WriteString("/poweroff — shutdown (confirmation required)\n")
-	b.WriteString("/silence <min> — silence alerts (e.g. /silence 30)\n")
-	b.WriteString("/silence off — resume alerts\n")
-	b.WriteString("/silence — show silence status\n")
-	b.WriteString("/version — bpimon version & updates\n")
-	b.WriteString("/help — show this menu")
-	return b.String()
+
+	system := []format.HTML{
+		format.Bold("⚙️ System"),
+		item("/silence <min>", "silence alerts, e.g. /silence 30"),
+		item("/silence off", "resume alerts"),
+		item("/silence", "silence status"),
+		item("/reboot", "reboot (confirmation required)"),
+		item("/poweroff", "shut down (confirmation required)"),
+		item("/version", "version and updates"),
+		item("/help", "this menu"),
+	}
+
+	sections := []format.HTML{format.Lines(monitoring...)}
+	if len(docker) > 0 {
+		sections = append(sections, format.Lines(docker...))
+	}
+	sections = append(sections, format.Lines(system...))
+	return format.Join(sections, "\n\n")
 }
 
 func (h *Handler) SendCommandsMenu(s notifier.Notifier) {

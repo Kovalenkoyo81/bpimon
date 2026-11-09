@@ -7,20 +7,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 type Manager struct {
 	mu            sync.Mutex
 	alerts        []Alert
-	notifier      notifier.AlertSender
+	notifier      notifier.Notifier
+	host          string // shown in every alert, for chats with several machines
 	interval      time.Duration
 	cooldown      time.Duration
 	lastSent      map[string]time.Time
 	active        map[string]bool
 	resolution    map[string]Resolution
-	question      map[string]int  // alert name → message ID of the latest question with buttons
-	unknown       map[string]bool // alerts currently in Unknown state (for log de-duplication)
+	question      map[string]int       // alert name → message ID of the latest question with buttons
+	unknown       map[string]bool      // alerts currently in Unknown state (for log de-duplication)
+	since         map[string]time.Time // when the current incident started
 	silencedUntil time.Time
 	statePath     string
 	saveMu        sync.Mutex // serialises state file writes
@@ -54,7 +57,10 @@ func (m *Manager) SetStatePath(path string) {
 	m.statePath = path
 }
 
-func NewManager(a []Alert, n notifier.AlertSender, interval, cooldown time.Duration) *Manager {
+// SetHost sets the machine name shown in alerts.
+func (m *Manager) SetHost(host string) { m.host = host }
+
+func NewManager(a []Alert, n notifier.Notifier, interval, cooldown time.Duration) *Manager {
 	return &Manager{
 		alerts:     a,
 		notifier:   n,
@@ -65,6 +71,7 @@ func NewManager(a []Alert, n notifier.AlertSender, interval, cooldown time.Durat
 		resolution: make(map[string]Resolution),
 		question:   make(map[string]int),
 		unknown:    make(map[string]bool),
+		since:      make(map[string]time.Time),
 	}
 }
 
@@ -83,7 +90,11 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-t.C:
 			silenced := m.IsSilenced()
 			if wasSilenced && !silenced {
-				_ = m.notifier.SendAlert("🔔 Alert silence expired, monitoring resumed")
+				_ = m.notifier.Send(format.Lines(
+					format.Concat(format.Text("🔔 "), format.Bold("Silence expired"), hostSuffix(m.host)),
+					format.Text("monitoring resumed"),
+					stamp(time.Now()),
+				))
 			}
 			wasSilenced = silenced
 			if silenced {
@@ -125,6 +136,7 @@ func (m *Manager) Resolve(name string, r Resolution) error {
 	if !m.active[name] {
 		m.active[name] = true
 		m.lastSent[name] = time.Now()
+		m.since[name] = time.Now()
 	}
 	m.resolution[name] = r
 	msgID := m.question[name]
@@ -189,20 +201,23 @@ func (m *Manager) checkOne(a Alert) bool {
 	active := m.active[name]
 	lastSent := m.lastSent[name]
 	res := m.resolution[name]
+	since := m.since[name]
 	m.mu.Unlock()
 
 	askable, isAskable := a.(Askable)
+	now := time.Now()
 
 	if verdict == Clear {
 		if !active {
 			return false
 		}
 		if res != Intentional {
-			_ = m.notifier.SendAlert("✅ " + name + ": back to normal")
+			_ = m.notifier.Send(recoveryMessage(headline(a, false), m.host, elapsed(since, now), now))
 		}
 		m.mu.Lock()
 		m.active[name] = false
 		delete(m.resolution, name)
+		delete(m.since, name)
 		msgID := m.question[name]
 		delete(m.question, name)
 		m.mu.Unlock()
@@ -221,17 +236,24 @@ func (m *Manager) checkOne(a Alert) bool {
 		return false
 	}
 
-	text := "🚨 " + name + ": " + msg
+	var ongoing time.Duration
+	if active {
+		ongoing = elapsed(since, now) // a reminder: say how long it has lasted
+	}
+	text := firingMessage(headline(a, true), m.host, msg, ongoing, now)
 	newMsg := 0
 	if isAskable && res == unresolved {
 		newMsg = m.sendQuestion(name, text, askable)
 	} else {
-		_ = m.notifier.SendAlert(text)
+		_ = m.notifier.Send(text)
 	}
 
 	m.mu.Lock()
-	m.lastSent[name] = time.Now()
+	m.lastSent[name] = now
 	m.active[name] = true
+	if !active || m.since[name].IsZero() {
+		m.since[name] = now
+	}
 	oldMsg := m.question[name]
 	if newMsg != 0 {
 		m.question[name] = newMsg
@@ -245,14 +267,14 @@ func (m *Manager) checkOne(a Alert) bool {
 
 // sendQuestion sends text with answer buttons and returns the message ID
 // (0 if buttons are unsupported or sending failed).
-func (m *Manager) sendQuestion(name, text string, a Askable) int {
+func (m *Manager) sendQuestion(name string, text format.HTML, a Askable) int {
 	bs, ok := m.notifier.(notifier.ButtonSender)
 	if !ok {
-		_ = m.notifier.SendAlert(text)
+		_ = m.notifier.Send(text)
 		return 0
 	}
 	intentional, incident := a.Choices()
-	id, err := bs.SendAlertWithButtons(text, []notifier.Button{
+	id, err := bs.SendWithButtons(text, []notifier.Button{
 		{Text: intentional, Data: CallbackData(name, Intentional)},
 		{Text: incident, Data: CallbackData(name, Incident)},
 	})
@@ -261,6 +283,14 @@ func (m *Manager) sendQuestion(name, text string, a Askable) int {
 		return 0
 	}
 	return id
+}
+
+// elapsed is the time since start, or 0 if start is unknown.
+func elapsed(start, now time.Time) time.Duration {
+	if start.IsZero() || now.Before(start) {
+		return 0
+	}
+	return now.Sub(start)
 }
 
 // trackUnknown logs when an alert becomes undeterminable and when it

@@ -300,3 +300,13 @@ func TestReadErrorsAreUnknown(t *testing.T) {
 		}
 	}
 }
+
+func TestDockerHeadline(t *testing.T) {
+	a := NewDocker(stubDocker{monitor.DockerHealth{Container: "app", Status: "exited"}})
+	if a.Headline(true) != "app is down" || a.Headline(false) != "app is back" {
+		t.Fatalf("headlines: %q / %q", a.Headline(true), a.Headline(false))
+	}
+	if _, msg := a.Evaluate(); msg != "status: exited" {
+		t.Fatalf("detail: %q", msg)
+	}
+}

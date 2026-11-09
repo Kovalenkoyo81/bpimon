@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
@@ -34,15 +35,12 @@ type collectingNotifier struct {
 	msgs []string
 }
 
-func (n *collectingNotifier) Send(text string) error {
+func (n *collectingNotifier) Send(msg format.HTML) error {
+	text := msg.String()
 	n.mu.Lock()
 	n.msgs = append(n.msgs, text)
 	n.mu.Unlock()
 	return nil
-}
-
-func (n *collectingNotifier) SendAlert(text string) error {
-	return n.Send(text)
 }
 
 func (n *collectingNotifier) all() []string {
@@ -76,7 +74,7 @@ func TestManagerFiresAlert(t *testing.T) {
 
 	runTick(m)
 
-	if !n.contains("🚨 CPU") {
+	if !n.contains("🚨 <b>CPU") {
 		t.Fatalf("expected alert message, got %v", n.all())
 	}
 }
@@ -90,7 +88,7 @@ func TestManagerRecoveryAfterAlert(t *testing.T) {
 	a.firing = false
 	runTick(m) // condition cleared → recovery
 
-	if !n.contains("✅ CPU") {
+	if !n.contains("✅ <b>CPU") {
 		t.Fatalf("expected recovery message, got %v", n.all())
 	}
 }
@@ -119,7 +117,7 @@ func TestManagerRecoverySentOnce(t *testing.T) {
 
 	count := 0
 	for _, msg := range n.all() {
-		if strings.Contains(msg, "✅ CPU") {
+		if strings.Contains(msg, "✅ <b>CPU") {
 			count++
 		}
 	}
@@ -138,7 +136,7 @@ func TestManagerCooldownSuppressDuplicateAlerts(t *testing.T) {
 
 	count := 0
 	for _, msg := range n.all() {
-		if strings.Contains(msg, "🚨 CPU") {
+		if strings.Contains(msg, "🚨 <b>CPU") {
 			count++
 		}
 	}
@@ -162,13 +160,13 @@ type buttonNotifier struct {
 
 var _ notifier.ButtonSender = (*buttonNotifier)(nil)
 
-func (n *buttonNotifier) SendAlertWithButtons(text string, b []notifier.Button) (int, error) {
+func (n *buttonNotifier) SendWithButtons(msg format.HTML, b []notifier.Button) (int, error) {
 	n.mu.Lock()
-	n.withButtons = append(n.withButtons, text)
+	n.withButtons = append(n.withButtons, msg.String())
 	n.buttons = append(n.buttons, b)
 	id := len(n.withButtons)
 	n.mu.Unlock()
-	return id, n.Send(text)
+	return id, n.Send(msg)
 }
 
 func (n *buttonNotifier) ClearButtons(id int) error {
@@ -350,7 +348,7 @@ func TestAskableFallsBackWithoutButtonSender(t *testing.T) {
 	n := &collectingNotifier{}
 	m := NewManager([]Alert{a}, n, time.Minute, time.Hour)
 	runTick(m)
-	if countPrefix(n, "🚨 Docker app") != 1 {
+	if countPrefix(n, "🚨 <b>Docker app") != 1 {
 		t.Fatalf("expected plain alert fallback: %v", n.all())
 	}
 }
@@ -426,7 +424,7 @@ func TestUnknownKeepsActiveStateWithoutMessages(t *testing.T) {
 
 	a.v = Clear
 	runTick(m)
-	if countPrefix(n, "✅ X") != 1 {
+	if countPrefix(n, "✅ <b>X") != 1 {
 		t.Fatalf("recovery expected once state is known again: %v", n.all())
 	}
 }
@@ -519,11 +517,54 @@ func TestManagerRepeatingAlertRefiresAfterCooldown(t *testing.T) {
 	runTick(m)
 	runTick(m)
 
-	if c := countPrefix(n, "🚨 CPU"); c != 2 {
+	if c := countPrefix(n, "🚨 <b>CPU"); c != 2 {
 		t.Fatalf("expected repeating alert to re-fire, got %d: %v", c, n.all())
 	}
 }
 
 func TestManagerNotifier(t *testing.T) {
 	_ = notifier.Dummy{} // ensure Dummy satisfies notifier.Notifier
+}
+
+func TestAlertMessages(t *testing.T) {
+	at := time.Date(2026, 11, 9, 21, 35, 0, 0, time.UTC)
+	got := firingMessage("app <x> is down", "pi", "status: exited", time.Hour, at).String()
+	want := "🚨 <b>app &lt;x&gt; is down</b> · pi\nstatus: exited\nfor 1h 0m\n<i>21:35 UTC</i>"
+	if got != want {
+		t.Errorf("firing:\n got %q\nwant %q", got, want)
+	}
+	got = recoveryMessage("app is back", "", 2*time.Hour+14*time.Minute, at).String()
+	want = "✅ <b>app is back</b>\nafter 2h 14m\n<i>21:35 UTC</i>"
+	if got != want {
+		t.Errorf("recovery:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestReminderSaysHowLongAndRecoverySaysDuration(t *testing.T) {
+	a := &stubAlert{name: "CPU", firing: true, msg: "usage 95%"}
+	n := &collectingNotifier{}
+	m := NewManager([]Alert{a}, n, time.Minute, 0)
+	m.SetHost("pi")
+	runTick(m)
+	m.since["CPU"] = time.Now().Add(-90 * time.Minute) // pretend it started earlier
+	runTick(m)
+	a.firing = false
+	runTick(m)
+
+	msgs := n.all()
+	if len(msgs) != 3 {
+		t.Fatalf("expected fire, reminder, recovery; got %v", msgs)
+	}
+	if strings.Contains(msgs[0], "for ") || !strings.Contains(msgs[0], " · pi") {
+		t.Errorf("first alert: %q", msgs[0])
+	}
+	if !strings.Contains(msgs[1], "for 1h 30m") {
+		t.Errorf("reminder must say how long: %q", msgs[1])
+	}
+	if !strings.Contains(msgs[2], "CPU back to normal") || !strings.Contains(msgs[2], "after 1h 30m") {
+		t.Errorf("recovery: %q", msgs[2])
+	}
+	if _, ok := m.since["CPU"]; ok {
+		t.Error("since must be cleared on recovery")
+	}
 }

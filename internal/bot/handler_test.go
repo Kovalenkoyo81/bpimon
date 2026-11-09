@@ -1,46 +1,42 @@
 package bot
 
 import (
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 	"github.com/Kovalenkoyo81/bpimon/internal/system"
 )
 
 // --- test doubles ---
 
-type mockProvider struct{ name, status string }
+type stubCPU struct{ pct float64 }
 
-func (m mockProvider) Name() string { return m.name }
-func (m mockProvider) Kind() monitor.Kind {
-	switch strings.Fields(m.name)[0] {
-	case "CPU":
-		return monitor.KindCPU
-	case "RAM":
-		return monitor.KindRAM
-	case "Disk":
-		return monitor.KindDisk
-	case "SMART":
-		return monitor.KindSmart
-	case "SD":
-		return monitor.KindSD
-	}
-	return 0
+func (stubCPU) Name() string                       { return "CPU" }
+func (stubCPU) Kind() monitor.Kind                 { return monitor.KindCPU }
+func (s stubCPU) Sample() (monitor.CPUStat, error) { return monitor.CPUStat{UsagePct: s.pct}, nil }
+
+type stubRAM struct{ pct int }
+
+func (stubRAM) Name() string       { return "RAM" }
+func (stubRAM) Kind() monitor.Kind { return monitor.KindRAM }
+func (s stubRAM) Usage() (monitor.MemoryStat, error) {
+	return monitor.MemoryStat{TotalMB: 1000, FreeMB: uint64(1000 - s.pct*10), UsedPct: s.pct}, nil
 }
-func (m mockProvider) Status() (string, error) { return m.status, nil }
 
-// mockDockerProvider satisfies monitor.ContainerProvider without calling docker.
+// mockDockerProvider is a running container, without calling docker.
 type mockDockerProvider struct{ container string }
 
-func (m mockDockerProvider) Name() string       { return "Docker " + m.container }
-func (m mockDockerProvider) Kind() monitor.Kind { return monitor.KindDocker }
-func (m mockDockerProvider) Status() (string, error) {
-	return "🐳 " + m.container + " — ✅ running", nil
-}
+func (m mockDockerProvider) Name() string          { return "Docker " + m.container }
+func (m mockDockerProvider) Kind() monitor.Kind    { return monitor.KindDocker }
 func (m mockDockerProvider) ContainerName() string { return m.container }
+func (m mockDockerProvider) Health() (monitor.DockerHealth, error) {
+	return monitor.DockerHealth{Container: m.container, Status: "running", Running: true}, nil
+}
 
 // mockSender is thread-safe — needed because execute() writes from a goroutine.
 type mockSender struct {
@@ -48,9 +44,9 @@ type mockSender struct {
 	msgs []string
 }
 
-func (m *mockSender) Send(text string) error {
+func (m *mockSender) Send(msg format.HTML) error {
 	m.mu.Lock()
-	m.msgs = append(m.msgs, text)
+	m.msgs = append(m.msgs, msg.String())
 	m.mu.Unlock()
 	return nil
 }
@@ -98,64 +94,70 @@ func newHandlerWith(adminIDs []int64, providers []monitor.Provider, sys SystemAc
 	return h
 }
 
+var confirmRe = regexp.MustCompile(`/confirm (\d+)`)
+
+// confirmCode extracts the confirmation code from a prompt.
+func confirmCode(t *testing.T, resp string) string {
+	t.Helper()
+	m := confirmRe.FindStringSubmatch(resp)
+	if m == nil {
+		t.Fatalf("no confirmation code in %q", resp)
+	}
+	return m[1]
+}
+
 // --- tests ---
 
 func TestHandleEmpty(t *testing.T) {
 	h := newHandler(nil, nil)
-	if resp := h.Handle("", 1, &mockSender{}); resp != "" {
+	if resp := h.Handle("", 1, &mockSender{}); !resp.IsZero() {
 		t.Errorf("expected empty, got %q", resp)
 	}
 }
 
 func TestHandleUnknownCommand(t *testing.T) {
 	h := newHandler(nil, nil)
-	resp := h.Handle("/unknown", 1, &mockSender{})
+	resp := h.Handle("/unknown", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "Commands:") {
 		t.Errorf("expected help text, got %q", resp)
 	}
 }
 
 func TestHandleStripBotname(t *testing.T) {
-	h := newHandler(nil, []monitor.Provider{mockProvider{"CPU", "cpu_status"}})
-	resp := h.Handle("/cpu@MyBot", 1, &mockSender{})
-	if resp != "cpu_status" {
-		t.Errorf("expected cpu_status after strip, got %q", resp)
+	h := newHandler(nil, []monitor.Provider{stubCPU{12.5}})
+	resp := h.Handle("/cpu@MyBot", 1, &mockSender{}).String()
+	if !strings.Contains(resp, "12.5%") {
+		t.Errorf("expected CPU card after strip, got %q", resp)
 	}
 }
 
 func TestHandleStatusCollectsAll(t *testing.T) {
-	providers := []monitor.Provider{
-		mockProvider{"CPU", "cpu_out"},
-		mockProvider{"RAM", "ram_out"},
-	}
-	resp := newHandler(nil, providers).Handle("/status", 1, &mockSender{})
-	if !strings.Contains(resp, "cpu_out") || !strings.Contains(resp, "ram_out") {
+	providers := []monitor.Provider{stubRAM{43}, stubCPU{12.5}}
+	resp := newHandler(nil, providers).Handle("/status", 1, &mockSender{}).String()
+	if !strings.Contains(resp, "12.5%") || !strings.Contains(resp, "43%") {
 		t.Errorf("/status missing providers: %q", resp)
 	}
 }
 
 func TestHandleCPUFiltersOtherProviders(t *testing.T) {
-	providers := []monitor.Provider{
-		mockProvider{"CPU", "cpu_line"},
-		mockProvider{"RAM", "ram_line"},
-	}
-	resp := newHandler(nil, providers).Handle("/cpu", 1, &mockSender{})
-	if !strings.Contains(resp, "cpu_line") || strings.Contains(resp, "ram_line") {
+	providers := []monitor.Provider{stubCPU{12.5}, stubRAM{43}}
+	resp := newHandler(nil, providers).Handle("/cpu", 1, &mockSender{}).String()
+	if !strings.Contains(resp, "12.5%") || strings.Contains(resp, "RAM") {
 		t.Errorf("/cpu should return only CPU provider: %q", resp)
 	}
 }
 
 func TestHandleRAM(t *testing.T) {
-	providers := []monitor.Provider{mockProvider{"RAM", "ram_line"}, mockProvider{"CPU", "cpu_line"}}
-	resp := newHandler(nil, providers).Handle("/ram", 1, &mockSender{})
-	if !strings.Contains(resp, "ram_line") || strings.Contains(resp, "cpu_line") {
+	providers := []monitor.Provider{stubRAM{43}, stubCPU{12.5}}
+	resp := newHandler(nil, providers).Handle("/ram", 1, &mockSender{}).String()
+	if !strings.Contains(resp, "43%") || strings.Contains(resp, "CPU") {
 		t.Errorf("/ram should return only RAM provider: %q", resp)
 	}
 }
 
 func TestHandleDocker(t *testing.T) {
 	providers := []monitor.Provider{mockDockerProvider{"syncthing"}}
-	resp := newHandler(nil, providers).Handle("/docker", 1, &mockSender{})
+	resp := newHandler(nil, providers).Handle("/docker", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "syncthing") {
 		t.Errorf("/docker should include container status: %q", resp)
 	}
@@ -163,7 +165,7 @@ func TestHandleDocker(t *testing.T) {
 
 func TestHandleRestartNonAdmin(t *testing.T) {
 	h := newHandler([]int64{999}, nil)
-	resp := h.Handle("/restart", 1, &mockSender{})
+	resp := h.Handle("/restart", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "Only admins") {
 		t.Errorf("expected admin error, got %q", resp)
 	}
@@ -171,7 +173,7 @@ func TestHandleRestartNonAdmin(t *testing.T) {
 
 func TestHandleRestartMenuAdmin(t *testing.T) {
 	providers := []monitor.Provider{mockDockerProvider{"myapp"}}
-	resp := newHandler([]int64{1}, providers).Handle("/restart", 1, &mockSender{})
+	resp := newHandler([]int64{1}, providers).Handle("/restart", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "/restart_myapp") {
 		t.Errorf("expected container menu, got %q", resp)
 	}
@@ -179,7 +181,7 @@ func TestHandleRestartMenuAdmin(t *testing.T) {
 
 func TestHandleRestartMenuWithHyphen(t *testing.T) {
 	providers := []monitor.Provider{mockDockerProvider{"my-app"}}
-	resp := newHandler([]int64{1}, providers).Handle("/restart", 1, &mockSender{})
+	resp := newHandler([]int64{1}, providers).Handle("/restart", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "/restart_my_app") {
 		t.Errorf("expected hyphen replaced with underscore, got %q", resp)
 	}
@@ -187,14 +189,14 @@ func TestHandleRestartMenuWithHyphen(t *testing.T) {
 
 func TestHandleRestartUnderscoreRequestsConfirm(t *testing.T) {
 	providers := []monitor.Provider{mockDockerProvider{"my-app"}}
-	resp := newHandler([]int64{1}, providers).Handle("/restart_my_app", 1, &mockSender{})
+	resp := newHandler([]int64{1}, providers).Handle("/restart_my_app", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "/confirm") {
 		t.Errorf("expected confirm prompt, got %q", resp)
 	}
 }
 
 func TestHandleRestartUnknownContainer(t *testing.T) {
-	resp := newHandler([]int64{1}, nil).Handle("/restart_unknown", 1, &mockSender{})
+	resp := newHandler([]int64{1}, nil).Handle("/restart_unknown", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "Unknown container") {
 		t.Errorf("expected unknown container error, got %q", resp)
 	}
@@ -202,14 +204,14 @@ func TestHandleRestartUnknownContainer(t *testing.T) {
 
 func TestHandleRestartNonAdminUnderscore(t *testing.T) {
 	providers := []monitor.Provider{mockDockerProvider{"myapp"}}
-	resp := newHandler([]int64{999}, providers).Handle("/restart_myapp", 1, &mockSender{})
+	resp := newHandler([]int64{999}, providers).Handle("/restart_myapp", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "Only admins") {
 		t.Errorf("expected admin error, got %q", resp)
 	}
 }
 
 func TestHandleConfirmMissingCode(t *testing.T) {
-	resp := newHandler(nil, nil).Handle("/confirm", 1, &mockSender{})
+	resp := newHandler(nil, nil).Handle("/confirm", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "Usage:") {
 		t.Errorf("expected usage hint, got %q", resp)
 	}
@@ -219,7 +221,7 @@ func TestHandleConfirmWrongCode(t *testing.T) {
 	providers := []monitor.Provider{mockDockerProvider{"myapp"}}
 	h := newHandler([]int64{1}, providers)
 	h.Handle("/restart_myapp", 1, &mockSender{})
-	resp := h.Handle("/confirm 9999", 1, &mockSender{})
+	resp := h.Handle("/confirm 9999", 1, &mockSender{}).String()
 	if !strings.Contains(resp, "Invalid") {
 		t.Errorf("expected invalid code response, got %q", resp)
 	}
@@ -228,14 +230,12 @@ func TestHandleConfirmWrongCode(t *testing.T) {
 func TestHandleConfirmDockerSendsRestartingMessage(t *testing.T) {
 	providers := []monitor.Provider{mockDockerProvider{"myapp"}}
 	h := newHandler([]int64{1}, providers)
-	resp := h.Handle("/restart_myapp", 1, &mockSender{})
+	resp := h.Handle("/restart_myapp", 1, &mockSender{}).String()
 
-	start := strings.Index(resp, "/confirm ") + len("/confirm ")
-	end := strings.Index(resp[start:], "`")
-	code := resp[start : start+end]
+	code := confirmCode(t, resp)
 
 	s := &mockSender{}
-	result := h.Handle("/confirm "+code, 1, s)
+	result := h.Handle("/confirm "+code, 1, s).String()
 
 	// execute() sends "Restarting..." immediately and returns ""
 	if result != "" {
@@ -246,35 +246,44 @@ func TestHandleConfirmDockerSendsRestartingMessage(t *testing.T) {
 	}
 }
 
-type kindProvider struct {
-	kind         monitor.Kind
-	name, status string
-}
+// renamedRAM reports RAM under an unusual display name.
+type renamedRAM struct{ stubRAM }
 
-func (k kindProvider) Name() string            { return k.name }
-func (k kindProvider) Kind() monitor.Kind      { return k.kind }
-func (k kindProvider) Status() (string, error) { return k.status, nil }
+func (renamedRAM) Name() string { return "Docker-looking memory" }
 
 // Commands select providers by Kind, not by display name.
 func TestCommandsSelectByKindNotName(t *testing.T) {
-	h := newHandler(nil, []monitor.Provider{
-		kindProvider{monitor.KindDocker, "Whale engine", "daemon_ok"},
-		kindProvider{monitor.KindRAM, "Docker-looking RAM", "ram_ok"},
-	})
-	got := h.Handle("/docker", 1, nil)
-	if !strings.Contains(got, "daemon_ok") || strings.Contains(got, "ram_ok") {
+	h := newHandler(nil, []monitor.Provider{mockDockerProvider{"whale"}, renamedRAM{stubRAM{43}}})
+	got := h.Handle("/docker", 1, nil).String()
+	if !strings.Contains(got, "whale") || strings.Contains(got, "43%") {
 		t.Fatalf("/docker = %q", got)
 	}
-	if got := h.Handle("/ram", 1, nil); got != "ram_ok" {
+	if got := h.Handle("/ram", 1, nil).String(); !strings.Contains(got, "43%") {
 		t.Fatalf("/ram = %q", got)
+	}
+}
+
+// Dynamic values are escaped: a hostile container name cannot break the
+// HTML that Telegram would otherwise reject.
+func TestOutputIsEscaped(t *testing.T) {
+	h := newHandlerWith([]int64{1}, []monitor.Provider{mockDockerProvider{"a<b>&c"}}, &fakeSystem{})
+	got := h.Handle("/docker", 1, nil).String()
+	if strings.Contains(got, "a<b>") || !strings.Contains(got, "a&lt;b&gt;&amp;c") {
+		t.Fatalf("container name not escaped: %q", got)
+	}
+	if got := h.Handle("/restart nope<x>", 1, nil).String(); strings.Contains(got, "<x>") {
+		t.Fatalf("argument not escaped: %q", got)
+	}
+	if got := h.Handle("/help", 1, nil).String(); strings.Contains(got, "<min>") {
+		t.Fatalf("menu not escaped: %q", got)
 	}
 }
 
 func TestConfirmRestartRunsActionAndReports(t *testing.T) {
 	sys := &fakeSystem{}
 	h := newHandlerWith([]int64{1}, []monitor.Provider{mockDockerProvider{"my-app"}}, sys)
-	resp := h.Handle("/restart my-app", 1, &mockSender{})
-	code := strings.TrimSuffix(strings.Fields(resp[strings.Index(resp, "/confirm "):])[1], "`")
+	resp := h.Handle("/restart my-app", 1, &mockSender{}).String()
+	code := confirmCode(t, resp)
 
 	s := &mockSender{}
 	h.Handle("/confirm "+code, 1, s)
@@ -295,14 +304,14 @@ func TestConfirmRestartRunsActionAndReports(t *testing.T) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.msgs) < 2 || !strings.Contains(s.msgs[1], "✅ Status: running") {
+	if len(s.msgs) < 2 || !strings.Contains(s.msgs[1], "✅ <b>my-app</b> restarted") {
 		t.Fatalf("expected success report, got %v", s.msgs)
 	}
 }
 
 func TestRebootUnavailableWithoutSystemctl(t *testing.T) {
 	h := newHandlerWith([]int64{1}, nil, &fakeSystem{canPower: false})
-	if got := h.Handle("/reboot", 1, nil); !strings.Contains(got, "unavailable") {
+	if got := h.Handle("/reboot", 1, nil).String(); !strings.Contains(got, "unavailable") {
 		t.Fatalf("/reboot = %q", got)
 	}
 }
@@ -310,10 +319,9 @@ func TestRebootUnavailableWithoutSystemctl(t *testing.T) {
 func TestConfirmRebootCallsSystem(t *testing.T) {
 	sys := &fakeSystem{canPower: true}
 	h := newHandlerWith([]int64{1}, nil, sys)
-	resp := h.Handle("/reboot", 1, nil)
-	code := strings.Fields(resp[strings.Index(resp, "/confirm "):])[1]
-	code = strings.Trim(code, "`")
-	if got := h.Handle("/confirm "+code, 1, nil); !strings.Contains(got, "reboot initiated") {
+	resp := h.Handle("/reboot", 1, nil).String()
+	code := confirmCode(t, resp)
+	if got := h.Handle("/confirm "+code, 1, nil).String(); !strings.Contains(got, "reboot initiated") {
 		t.Fatalf("/confirm = %q", got)
 	}
 	if !sys.rebooted {
@@ -333,5 +341,14 @@ func TestParseCommand(t *testing.T) {
 		if got := strings.Join(parseCommand(in), " "); got != want {
 			t.Errorf("parseCommand(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestMemoryAmount(t *testing.T) {
+	if got := memoryAmount(413, 958); got != "413 / 958 MB" {
+		t.Errorf("small board: %q", got)
+	}
+	if got := memoryAmount(7795, 13393); got != "7.6 / 13.1 GB" {
+		t.Errorf("large machine: %q", got)
 	}
 }

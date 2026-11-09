@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Kovalenkoyo81/bpimon/internal/buildinfo"
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
@@ -20,19 +20,17 @@ func (h *Handler) SendStartupMessage(s notifier.Notifier) string {
 	reboot := systemRebootUptime()
 	if h.version == nil {
 		if reboot > 0 {
-			_ = s.Send("🔁 Bot started after system reboot\n⏱ System uptime: " + buildinfo.FormatDuration(reboot))
+			_ = s.Send(format.Text("🔁 Bot started after system reboot, uptime " + format.Duration(reboot)))
 		}
 		return ""
 	}
-	msg, announced := h.version.Startup(reboot)
+	msg, announced := h.version.Startup(h.host, reboot)
 	_ = s.Send(msg)
 	return announced
 }
 
 func (h *Handler) SendInitialStatus(s notifier.Notifier) {
-	if msg := h.collect(); msg != "" {
-		_ = s.Send("📊 Initial system status:\n" + msg)
-	}
+	_ = s.Send(h.statusReport())
 }
 
 // systemRebootUptime returns the system uptime if the bot is starting for

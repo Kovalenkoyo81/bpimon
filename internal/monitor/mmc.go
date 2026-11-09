@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,18 +34,6 @@ func (s SD) Health() (SDHealth, error) {
 		ErrorCount: r.errorCount,
 		LastError:  r.lastError,
 	}, nil
-}
-
-func (s SD) Status() (string, error) {
-	h, err := s.Health()
-	if err != nil {
-		return "", err
-	}
-	out := fmt.Sprintf("💳 SD %s [%s]\nErrors: %d", filepath.Base(h.Device), h.Name, h.ErrorCount)
-	if h.LastError != "" {
-		out += "\nLast: " + h.LastError
-	}
-	return out, nil
 }
 
 // DiscoverSDCards returns all SD cards found in sysfs (MMC_TYPE=SD, no partitions).

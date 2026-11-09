@@ -4,6 +4,11 @@ type CPUReader interface {
 	Usage() (CPUStat, error)
 }
 
+// CPUSampler measures CPU usage on demand, over its own window.
+type CPUSampler interface {
+	Sample() (CPUStat, error)
+}
+
 type CPUTempReader interface {
 	TempC() (float64, error)
 }
@@ -35,11 +40,11 @@ type DockerDaemonReader interface {
 	Ping() (string, error)
 }
 
-// Provider is the bot/UI interface for all metric sources.
+// Provider is a metric source. It exposes data through the reader
+// interfaces above; rendering is up to the caller.
 type Provider interface {
 	Name() string
 	Kind() Kind
-	Status() (string, error)
 }
 
 // Availabler providers declare whether they can run on the current system.

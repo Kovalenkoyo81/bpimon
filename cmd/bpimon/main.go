@@ -26,6 +26,16 @@ const (
 	updateCheckInterval = 24 * time.Hour
 )
 
+// hostname names this machine in messages; "" if unknown.
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		slog.Warn("hostname unknown", "err", err)
+		return ""
+	}
+	return h
+}
+
 // logLevel is Info, or Debug when BPIMON_DEBUG is set.
 func logLevel() slog.Level {
 	if os.Getenv("BPIMON_DEBUG") != "" {
@@ -62,7 +72,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	var ntf notifier.AlertSender = notifier.Dummy{}
+	var ntf notifier.Notifier = notifier.Dummy{}
 	var tg *bot.Bot
 	if cfg.Telegram.Enabled {
 		if tg, err = bot.Connect(ctx, cfg.Telegram.Token, cfg.Telegram.ChatID); err != nil {
@@ -87,9 +97,12 @@ func main() {
 	if *statePath != "" {
 		manager.SetStatePath(*statePath)
 	}
+	host := hostname()
+	manager.SetHost(host)
 
 	updates := update.NewGitHub(githubRepo)
 	handler := bot.NewHandler(bot.HandlerConfig{
+		Host:      host,
 		Providers: providers,
 		Admins:    cfg.Telegram.Admins,
 		Silencer:  manager,

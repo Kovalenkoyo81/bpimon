@@ -1,11 +1,10 @@
 package bot
 
 import (
-	"fmt"
+	"log/slog"
 	"strings"
 
-	"log/slog"
-
+	"github.com/Kovalenkoyo81/bpimon/internal/format"
 	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
@@ -14,53 +13,52 @@ const (
 	actionPoweroff = "poweroff"
 )
 
-func (h *Handler) cmdReboot(userID int64) string {
+func (h *Handler) cmdReboot(userID int64) format.HTML {
 	if !h.IsAdmin(userID) {
-		return "⚠️ Only admins can reboot the server"
+		return format.Text("⚠️ Only admins can reboot the server")
 	}
 	if !h.system.CanPower() {
-		return "⚠️ Reboot unavailable: systemctl not found"
+		return format.Text("⚠️ Reboot unavailable: systemctl not found")
 	}
 	code := h.confirm.Request(userID, actionReboot, 6)
-	return fmt.Sprintf("🔐 Type `/confirm %s` within 60 seconds to confirm reboot.", code)
+	return format.Fmt("🔐 Send %s within 60 seconds to <b>reboot</b>.", format.Code("/confirm "+code))
 }
 
-func (h *Handler) cmdPoweroff(userID int64) string {
+func (h *Handler) cmdPoweroff(userID int64) format.HTML {
 	if !h.IsAdmin(userID) {
-		return "⚠️ Only admins can power off the server"
+		return format.Text("⚠️ Only admins can power off the server")
 	}
 	if !h.system.CanPower() {
-		return "⚠️ Poweroff unavailable: systemctl not found"
+		return format.Text("⚠️ Poweroff unavailable: systemctl not found")
 	}
 	code := h.confirm.Request(userID, actionPoweroff, 6)
-	return fmt.Sprintf("🔐 Type `/confirm %s` within 60 seconds to confirm poweroff.", code)
+	return format.Fmt("🔐 Send %s within 60 seconds to <b>power off</b>.", format.Code("/confirm "+code))
 }
 
 // cmdConfirm executes the action a valid confirmation code was issued for.
-func (h *Handler) cmdConfirm(args []string, userID int64, s notifier.Notifier) string {
+func (h *Handler) cmdConfirm(args []string, userID int64, s notifier.Notifier) format.HTML {
 	if len(args) == 0 {
-		return "Usage: /confirm <code>"
+		return format.Fmt("Usage: %s", format.Code("/confirm <code>"))
 	}
 	action, ok := h.confirm.Validate(userID, args[0])
 	if !ok {
-		return "⚠️ Invalid or expired code"
+		return format.Text("⚠️ Invalid or expired code")
 	}
 	switch {
 	case action == actionReboot:
 		if err := h.system.Reboot(); err != nil {
 			slog.Error("reboot failed", "err", err)
-			return "❌ Failed to initiate reboot"
+			return format.Text("❌ Failed to initiate reboot")
 		}
-		return "🔄 Server reboot initiated"
+		return format.Text("🔄 Server reboot initiated")
 	case action == actionPoweroff:
 		if err := h.system.Poweroff(); err != nil {
 			slog.Error("poweroff failed", "err", err)
-			return "❌ Failed to initiate poweroff"
+			return format.Text("❌ Failed to initiate poweroff")
 		}
-		return "🔌 Server poweroff initiated"
+		return format.Text("🔌 Server poweroff initiated")
 	case strings.HasPrefix(action, actionDockerPrefix):
 		h.restartContainer(strings.TrimPrefix(action, actionDockerPrefix), s)
-		return ""
 	}
-	return ""
+	return format.HTML{}
 }

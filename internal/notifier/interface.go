@@ -1,11 +1,8 @@
 package notifier
 
-type Notifier interface {
-	Send(text string) error
-}
+import "github.com/Kovalenkoyo81/bpimon/internal/format"
 
-// AlertSender extends Notifier with a timestamped alert method.
-type AlertSender interface {
-	Notifier
-	SendAlert(text string) error
+// Notifier delivers a message to the chat.
+type Notifier interface {
+	Send(msg format.HTML) error
 }
