@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -128,5 +130,36 @@ func TestApplyEnvOverridesSkippedWhenTelegramDisabled(t *testing.T) {
 
 	if c.Telegram.Token != "token" {
 		t.Errorf("token: got %q, want unchanged %q", c.Telegram.Token, "token")
+	}
+}
+
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestLoadReturnsErrorsInsteadOfExiting(t *testing.T) {
+	if _, err := Load(filepath.Join(t.TempDir(), "missing.yaml")); err == nil || !strings.Contains(err.Error(), "cannot read") {
+		t.Fatalf("missing file: got %v", err)
+	}
+	if _, err := Load(writeConfig(t, "thresholds: [")); err == nil || !strings.Contains(err.Error(), "cannot parse") {
+		t.Fatalf("bad yaml: got %v", err)
+	}
+	if _, err := Load(writeConfig(t, "thresholds:\n  interval_min: 0\n  cooldown_min: 30\n")); err == nil || !strings.Contains(err.Error(), "interval_min") {
+		t.Fatalf("invalid config: got %v", err)
+	}
+}
+
+func TestLoadValid(t *testing.T) {
+	c, err := Load(writeConfig(t, "thresholds:\n  interval_min: 2\n  cooldown_min: 30\n  smart_temp: 55\n  smart_life: 10\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Thresholds.IntervalMin != 2 || c.Thresholds.CooldownMin != 30 {
+		t.Fatalf("unexpected %+v", c.Thresholds)
 	}
 }

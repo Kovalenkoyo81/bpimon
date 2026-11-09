@@ -42,7 +42,11 @@ func main() {
 	}
 
 	log.Init()
-	cfg := config.Load(*configPath)
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	log.Info.Println("Starting Banana Bot...")
 
@@ -52,7 +56,6 @@ func main() {
 	var ntf notifier.AlertSender = notifier.Dummy{}
 	var tg *bot.Bot
 	if cfg.Telegram.Enabled {
-		var err error
 		if tg, err = bot.Connect(ctx, cfg.Telegram.Token, cfg.Telegram.ChatID); err != nil {
 			log.Info.Println("Shutting down before Telegram connected")
 			return
@@ -60,7 +63,11 @@ func main() {
 		ntf = tg
 	}
 
-	providers := monitor.NewProviders(cfg.Devices.Smart, cfg.Devices.MMC, cfg.Devices.Docker)
+	providers, err := monitor.NewProviders(cfg.Devices.Smart, cfg.Devices.MMC, cfg.Devices.Docker)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config error:", err)
+		os.Exit(1)
+	}
 
 	manager := alert.NewManager(
 		alert.FromProviders(providers, cfg.Thresholds),

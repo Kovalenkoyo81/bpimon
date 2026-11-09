@@ -27,8 +27,17 @@ func New(token string, chatID int64) (*Bot, error) {
 	return &Bot{api: api, chatID: chatID}, nil
 }
 
+// Send sends a plain message. Failures are logged here, so callers that
+// cannot do anything about them may ignore the error.
 func (b *Bot) Send(text string) error {
 	_, err := b.api.Send(tgbotapi.NewMessage(b.chatID, text))
+	return logSendErr("send message", err)
+}
+
+func logSendErr(what string, err error) error {
+	if err != nil {
+		log.Error.Printf("telegram %s: %v", what, err)
+	}
 	return err
 }
 
@@ -47,7 +56,7 @@ func (b *Bot) SendAlertWithButtons(text string, buttons []notifier.Button) (int,
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(row)
 	sent, err := b.api.Send(msg)
 	if err != nil {
-		return 0, err
+		return 0, logSendErr("send alert with buttons", err)
 	}
 	return sent.MessageID, nil
 }

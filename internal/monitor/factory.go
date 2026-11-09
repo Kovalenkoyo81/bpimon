@@ -3,14 +3,14 @@ package monitor
 import (
 	"bpimon/internal/log"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
 
 // NewProviders creates the full list of monitoring providers.
 // SD cards are auto-discovered and merged with devices.mmc from config.
-func NewProviders(smartDevices, mmcDevices, dockerContainers []string) []Provider {
+// It fails if two container names map to the same /restart_ command.
+func NewProviders(smartDevices, mmcDevices, dockerContainers []string) ([]Provider, error) {
 	providers := []Provider{NewCPU(), Memory{}, Disk{}}
 
 	if len(smartDevices) > 0 {
@@ -45,8 +45,7 @@ func NewProviders(smartDevices, mmcDevices, dockerContainers []string) []Provide
 			for _, name := range containers {
 				norm := strings.ReplaceAll(name, "-", "_")
 				if existing, ok := seen[norm]; ok {
-					fmt.Fprintf(os.Stderr, "config error: docker container name collision: %q and %q both normalize to /restart_%s\n", existing, name, norm)
-					os.Exit(1)
+					return nil, fmt.Errorf("docker container name collision: %q and %q both normalize to /restart_%s", existing, name, norm)
 				}
 				seen[norm] = name
 				providers = append(providers, Docker{Container: name})
@@ -54,7 +53,7 @@ func NewProviders(smartDevices, mmcDevices, dockerContainers []string) []Provide
 		}
 	}
 
-	return providers
+	return providers, nil
 }
 
 // mergeSDDevices merges auto-discovered SD cards with those in config,
