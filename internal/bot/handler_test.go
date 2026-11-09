@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"bpimon/internal/log"
 	"bpimon/internal/monitor"
 	"bpimon/internal/system"
 	"strings"
@@ -9,10 +8,6 @@ import (
 	"testing"
 	"time"
 )
-
-func init() {
-	log.Init()
-}
 
 // --- test doubles ---
 

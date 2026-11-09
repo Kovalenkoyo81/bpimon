@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	"bpimon/internal/log"
+	"log/slog"
 
 	"bpimon/internal/notifier"
 
@@ -36,7 +36,7 @@ func (b *Bot) Send(text string) error {
 
 func logSendErr(what string, err error) error {
 	if err != nil {
-		log.Error.Printf("telegram %s: %v", what, err)
+		slog.Error("telegram request failed", "op", what, "err", err)
 	}
 	return err
 }
@@ -120,7 +120,7 @@ func Connect(ctx context.Context, token string, chatID int64) (*Bot, error) {
 		if errors.As(err, &urlErr) {
 			msg = urlErr.Err.Error()
 		}
-		log.Warn.Printf("Telegram unavailable (attempt %d): %s — retry in %s", attempt, msg, delay)
+		slog.Warn("telegram unavailable", "attempt", attempt, "reason", msg, "retry_in", delay)
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():

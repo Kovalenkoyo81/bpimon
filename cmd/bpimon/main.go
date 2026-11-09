@@ -5,7 +5,7 @@ import (
 	"bpimon/internal/bot"
 	"bpimon/internal/buildinfo"
 	"bpimon/internal/config"
-	"bpimon/internal/log"
+	"log/slog"
 	"bpimon/internal/monitor"
 	"bpimon/internal/notifier"
 	"bpimon/internal/system"
@@ -25,6 +25,14 @@ const (
 	updateCheckInterval = 24 * time.Hour
 )
 
+// logLevel is Info, or Debug when BPIMON_DEBUG is set.
+func logLevel() slog.Level {
+	if os.Getenv("BPIMON_DEBUG") != "" {
+		return slog.LevelDebug
+	}
+	return slog.LevelInfo
+}
+
 // Set via -ldflags at build time.
 var (
 	version   = "dev"
@@ -41,14 +49,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	log.Init()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel()})))
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	log.Info.Println("Starting Banana Bot...")
+	slog.Info("starting bpimon", "version", version)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -57,7 +65,7 @@ func main() {
 	var tg *bot.Bot
 	if cfg.Telegram.Enabled {
 		if tg, err = bot.Connect(ctx, cfg.Telegram.Token, cfg.Telegram.ChatID); err != nil {
-			log.Info.Println("Shutting down before Telegram connected")
+			slog.Info("shutting down before Telegram connected")
 			return
 		}
 		ntf = tg
@@ -108,11 +116,11 @@ func main() {
 	}()
 
 	<-ctx.Done()
-	log.Info.Println("Shutting down...")
+	slog.Info("shutting down")
 	// Let the manager save alert state before the process exits.
 	select {
 	case <-managerDone:
 	case <-time.After(5 * time.Second):
-		log.Warn.Println("alert manager did not stop in 5s")
+		slog.Warn("alert manager did not stop in 5s")
 	}
 }

@@ -1,7 +1,7 @@
 package alert
 
 import (
-	"bpimon/internal/log"
+	"log/slog"
 	"bpimon/internal/notifier"
 	"context"
 	"strings"
@@ -256,7 +256,7 @@ func (m *Manager) sendQuestion(name, text string, a Askable) int {
 		{Text: incident, Data: CallbackData(name, Incident)},
 	})
 	if err != nil {
-		log.Warn.Printf("send question for %s: %v", name, err)
+		slog.Warn("send question failed", "alert", name, "err", err)
 		return 0
 	}
 	return id
@@ -272,9 +272,9 @@ func (m *Manager) trackUnknown(name string, v Verdict, reason string) {
 	m.mu.Unlock()
 	switch {
 	case now && !was:
-		log.Warn.Printf("alert %q: state unknown: %s", name, reason)
+		slog.Warn("alert state unknown", "alert", name, "reason", reason)
 	case !now && was:
-		log.Info.Printf("alert %q: state known again (%s)", name, v)
+		slog.Info("alert state known again", "alert", name, "verdict", v.String())
 	}
 }
 
@@ -287,6 +287,6 @@ func (m *Manager) clearButtons(msgID int) {
 		return
 	}
 	if err := bs.ClearButtons(msgID); err != nil {
-		log.Warn.Printf("clear buttons on message %d: %v", msgID, err)
+		slog.Warn("clear buttons failed", "message_id", msgID, "err", err)
 	}
 }

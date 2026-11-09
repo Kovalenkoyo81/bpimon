@@ -1,7 +1,7 @@
 package alert
 
 import (
-	"bpimon/internal/log"
+	"log/slog"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -22,13 +22,13 @@ func (m *Manager) loadState() {
 	data, err := os.ReadFile(m.statePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Warn.Printf("failed to read alert state %s: %v", m.statePath, err)
+			slog.Warn("read alert state failed", "path", m.statePath, "err", err)
 		}
 		return
 	}
 	var s managerState
 	if err := json.Unmarshal(data, &s); err != nil {
-		log.Warn.Printf("failed to load alert state from %s: %v", m.statePath, err)
+		slog.Warn("parse alert state failed", "path", m.statePath, "err", err)
 		return
 	}
 	m.mu.Lock()
@@ -45,7 +45,7 @@ func (m *Manager) loadState() {
 		m.question = s.Question
 	}
 	m.mu.Unlock()
-	log.Info.Printf("alert state loaded from %s", m.statePath)
+	slog.Info("alert state loaded", "path", m.statePath)
 }
 
 // saveState writes the state atomically (temp file + rename), so a crash
@@ -63,7 +63,7 @@ func (m *Manager) saveState() {
 	})
 	m.mu.Unlock()
 	if err != nil {
-		log.Error.Printf("failed to marshal alert state: %v", err)
+		slog.Error("marshal alert state failed", "err", err)
 		return
 	}
 
@@ -71,12 +71,12 @@ func (m *Manager) saveState() {
 	defer m.saveMu.Unlock()
 	dir := filepath.Dir(m.statePath)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		log.Error.Printf("failed to create state dir: %v", err)
+		slog.Error("create state dir failed", "err", err)
 		return
 	}
 	tmp, err := os.CreateTemp(dir, ".alert_state-*")
 	if err != nil {
-		log.Error.Printf("failed to save alert state: %v", err)
+		slog.Error("save alert state failed", "err", err)
 		return
 	}
 	_, werr := tmp.Write(data)
@@ -84,14 +84,14 @@ func (m *Manager) saveState() {
 	cerr := tmp.Close()
 	if werr != nil || serr != nil || cerr != nil {
 		_ = os.Remove(tmp.Name())
-		log.Error.Printf("failed to save alert state: write=%v sync=%v close=%v", werr, serr, cerr)
+		slog.Error("save alert state failed", "write_err", werr, "sync_err", serr, "close_err", cerr)
 		return
 	}
 	if err := os.Chmod(tmp.Name(), 0600); err != nil {
-		log.Warn.Printf("chmod alert state: %v", err)
+		slog.Warn("chmod alert state failed", "err", err)
 	}
 	if err := os.Rename(tmp.Name(), m.statePath); err != nil {
 		_ = os.Remove(tmp.Name())
-		log.Error.Printf("failed to save alert state to %s: %v", m.statePath, err)
+		slog.Error("save alert state failed", "path", m.statePath, "err", err)
 	}
 }

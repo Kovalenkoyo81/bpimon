@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"bpimon/internal/log"
+	"log/slog"
 	"bpimon/internal/notifier"
 )
 
@@ -47,13 +47,13 @@ func (h *Handler) cmdConfirm(args []string, userID int64, s notifier.Notifier) s
 	switch {
 	case action == actionReboot:
 		if err := h.system.Reboot(); err != nil {
-			log.Error.Printf("reboot failed: %v", err)
+			slog.Error("reboot failed", "err", err)
 			return "❌ Failed to initiate reboot"
 		}
 		return "🔄 Server reboot initiated"
 	case action == actionPoweroff:
 		if err := h.system.Poweroff(); err != nil {
-			log.Error.Printf("poweroff failed: %v", err)
+			slog.Error("poweroff failed", "err", err)
 			return "❌ Failed to initiate poweroff"
 		}
 		return "🔌 Server poweroff initiated"

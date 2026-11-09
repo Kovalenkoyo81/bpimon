@@ -1,7 +1,7 @@
 package update
 
 import (
-	"bpimon/internal/log"
+	"log/slog"
 	"bpimon/internal/notifier"
 	"context"
 	"strings"
@@ -43,14 +43,14 @@ func (w *Watcher) check(ctx context.Context) {
 	defer cancel()
 	r, err := w.Source.Latest(cctx)
 	if err != nil {
-		log.Warn.Printf("update check: %v", err)
+		slog.Warn("update check failed", "err", err)
 		return
 	}
 	if !IsNewer(r.Tag, w.Current) || r.Tag == w.announced {
 		return
 	}
 	if err := w.Notifier.Send(Announcement(r, w.Current)); err != nil {
-		log.Warn.Printf("update announcement: %v", err)
+		slog.Warn("update announcement failed", "err", err)
 		return
 	}
 	w.announced = r.Tag

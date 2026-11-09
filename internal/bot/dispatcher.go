@@ -5,7 +5,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-	"bpimon/internal/log"
+	"log/slog"
 )
 
 // chatAPI is the part of the Telegram client the dispatcher needs.
@@ -34,7 +34,7 @@ func (d *Dispatcher) Run(ctx context.Context, updates <-chan tgbotapi.Update) {
 		select {
 		case u, ok := <-updates:
 			if !ok {
-				log.Warn.Println("Telegram updates channel closed")
+				slog.Warn("telegram updates channel closed")
 				return
 			}
 			d.dispatch(u)
@@ -61,7 +61,7 @@ func (d *Dispatcher) handleMessage(m *tgbotapi.Message) {
 	if response == "" {
 		return
 	}
-	log.Info.Printf("response len=%d val=%q", len(response), response)
+	slog.Debug("response", "len", len(response), "text", response)
 	_ = d.api.Send(response)
 }
 
@@ -72,25 +72,25 @@ func (d *Dispatcher) handleCallback(cq *tgbotapi.CallbackQuery) {
 	if cq.From != nil {
 		from = cq.From.ID
 	}
-	log.Info.Printf("callback received: data=%q from=%d", cq.Data, from)
+	slog.Info("callback received", "data", cq.Data, "user", from)
 	if cq.Message == nil || cq.Message.Chat == nil || cq.Message.Chat.ID != d.chatID || cq.From == nil {
-		log.Warn.Printf("callback ignored: not from the configured chat")
+		slog.Warn("callback ignored: not from the configured chat", "data", cq.Data, "user", from)
 		d.answer(cq.ID, "")
 		return
 	}
 	res := d.callbacks.Handle(cq.Data, cq.From.ID, displayName(cq.From))
-	log.Info.Printf("callback %q from %d: %s", cq.Data, cq.From.ID, res.Toast)
+	slog.Info("callback handled", "data", cq.Data, "user", cq.From.ID, "result", res.Toast)
 	d.answer(cq.ID, res.Toast)
 	if res.Note != "" {
 		if err := d.api.EditText(cq.Message.MessageID, cq.Message.Text+"\n\n"+res.Note); err != nil {
-			log.Warn.Printf("edit message: %v", err)
+			slog.Warn("edit message failed", "err", err)
 		}
 	}
 }
 
 func (d *Dispatcher) answer(callbackID, text string) {
 	if err := d.api.AnswerCallback(callbackID, text); err != nil {
-		log.Warn.Printf("answer callback: %v", err)
+		slog.Warn("answer callback failed", "err", err)
 	}
 }
 

@@ -2,7 +2,7 @@ package bot
 
 import (
 	"bpimon/internal/buildinfo"
-	"bpimon/internal/log"
+	"log/slog"
 	"bpimon/internal/update"
 	"context"
 	"time"
@@ -25,7 +25,7 @@ func (v *VersionReporter) newerRelease() (update.Release, bool) {
 	defer cancel()
 	r, err := v.Updates.Latest(ctx)
 	if err != nil {
-		log.Warn.Printf("update check: %v", err)
+		slog.Warn("update check failed", "err", err)
 		return update.Release{}, false
 	}
 	return r, update.IsNewer(r.Tag, v.Build.Version)

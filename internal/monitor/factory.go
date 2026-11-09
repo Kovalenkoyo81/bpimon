@@ -1,7 +1,7 @@
 package monitor
 
 import (
-	"bpimon/internal/log"
+	"log/slog"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -15,7 +15,7 @@ func NewProviders(smartDevices, mmcDevices, dockerContainers []string) ([]Provid
 
 	if len(smartDevices) > 0 {
 		if !(Smart{}).Available() {
-			log.Warn.Printf("smartctl not found — skipping %d SMART device(s)", len(smartDevices))
+			slog.Warn("smartctl not found, skipping SMART devices", "count", len(smartDevices))
 		} else {
 			for _, dev := range smartDevices {
 				providers = append(providers, Smart{Device: dev})
@@ -29,16 +29,16 @@ func NewProviders(smartDevices, mmcDevices, dockerContainers []string) ([]Provid
 
 	if len(dockerContainers) > 0 {
 		if !(Docker{}).Available() {
-			log.Warn.Printf("docker not found — skipping Docker monitoring")
+			slog.Warn("docker not found, skipping Docker monitoring")
 		} else {
 			providers = append(providers, DockerDaemon{})
 			containers := dockerContainers
 			if len(containers) == 1 && containers[0] == DockerAutoDiscover {
 				containers = DiscoverDockerContainers()
 				if len(containers) == 0 {
-					log.Warn.Printf("docker auto-discover: no running containers found")
+					slog.Warn("docker auto-discover: no running containers found")
 				} else {
-					log.Info.Printf("docker auto-discover: found %d container(s): %s", len(containers), strings.Join(containers, ", "))
+					slog.Info("docker auto-discover", "containers", containers)
 				}
 			}
 			seen := make(map[string]string)

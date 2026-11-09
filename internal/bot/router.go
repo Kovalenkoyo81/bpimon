@@ -3,7 +3,7 @@ package bot
 import (
 	"strings"
 
-	"bpimon/internal/log"
+	"log/slog"
 	"bpimon/internal/monitor"
 	"bpimon/internal/notifier"
 )
@@ -19,10 +19,10 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 	}
 	command := args[0]
 
-	log.Info.Printf("cmd=%q userID=%d", command, userID)
+	slog.Info("command", "cmd", command, "user", userID)
 
 	if !h.limiter.Allow(userID) {
-		log.Warn.Printf("rate limit exceeded: userID=%d cmd=%q", userID, command)
+		slog.Warn("rate limit exceeded", "cmd", command, "user", userID)
 		return ""
 	}
 
