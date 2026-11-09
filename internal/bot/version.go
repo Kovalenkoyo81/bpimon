@@ -1,11 +1,12 @@
 package bot
 
 import (
-	"bpimon/internal/buildinfo"
-	"log/slog"
-	"bpimon/internal/update"
 	"context"
+	"log/slog"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/buildinfo"
+	"github.com/Kovalenkoyo81/bpimon/internal/update"
 )
 
 const updateCheckTimeout = 5 * time.Second

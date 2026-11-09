@@ -3,8 +3,8 @@ package bot
 import (
 	"strings"
 
-	"bpimon/internal/monitor"
-	"bpimon/internal/notifier"
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 func (h *Handler) buildCommandsMenu() string {

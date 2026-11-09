@@ -1,8 +1,8 @@
 package alert
 
 import (
-	"log/slog"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"

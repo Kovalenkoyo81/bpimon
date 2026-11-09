@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"bpimon/internal/monitor"
-	"bpimon/internal/notifier"
-	"bpimon/internal/system"
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
+	"github.com/Kovalenkoyo81/bpimon/internal/system"
 )
 
 // containerProvider is a monitor.Provider that also exposes its container name.

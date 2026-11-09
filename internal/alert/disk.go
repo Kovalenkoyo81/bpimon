@@ -1,9 +1,10 @@
 package alert
 
 import (
-	"bpimon/internal/monitor"
 	"fmt"
 	"strings"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 )
 
 type Disk struct {

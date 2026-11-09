@@ -1,12 +1,13 @@
 package alert
 
 import (
-	"log/slog"
-	"bpimon/internal/notifier"
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 type Manager struct {

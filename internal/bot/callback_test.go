@@ -1,9 +1,10 @@
 package bot
 
 import (
-	"bpimon/internal/alert"
 	"strings"
 	"testing"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/alert"
 )
 
 type stubResolver struct {

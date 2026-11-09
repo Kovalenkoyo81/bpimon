@@ -1,12 +1,13 @@
 package bot
 
 import (
-	"bpimon/internal/monitor"
-	"bpimon/internal/system"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/system"
 )
 
 // --- test doubles ---

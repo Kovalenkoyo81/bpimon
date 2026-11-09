@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 )
 
 func (h *Handler) has(k monitor.Kind) bool {

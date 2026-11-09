@@ -1,8 +1,8 @@
 package monitor
 
 import (
-	"log/slog"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 )

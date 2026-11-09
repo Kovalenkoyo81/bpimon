@@ -1,8 +1,9 @@
 package alert
 
 import (
-	"bpimon/internal/monitor"
 	"fmt"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 )
 
 type Docker struct {

@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"log/slog"
-	"bpimon/internal/notifier"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 const (

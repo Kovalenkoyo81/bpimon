@@ -1,10 +1,11 @@
 package alert
 
 import (
-	"bpimon/internal/monitor"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 )
 
 // fires adapts Evaluate for table tests that only care about Firing.

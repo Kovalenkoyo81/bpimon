@@ -1,6 +1,6 @@
 package alert
 
-import "bpimon/internal/monitor"
+import "github.com/Kovalenkoyo81/bpimon/internal/monitor"
 
 // DockerDaemon fires while the docker daemon is unreachable.
 type DockerDaemon struct {

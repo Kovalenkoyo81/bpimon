@@ -1,11 +1,12 @@
 package update
 
 import (
-	"log/slog"
-	"bpimon/internal/notifier"
 	"context"
+	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 const maxNotesLines = 15

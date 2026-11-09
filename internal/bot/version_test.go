@@ -1,13 +1,14 @@
 package bot
 
 import (
-	"bpimon/internal/buildinfo"
-	"bpimon/internal/update"
 	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/buildinfo"
+	"github.com/Kovalenkoyo81/bpimon/internal/update"
 )
 
 type fakeSource struct {

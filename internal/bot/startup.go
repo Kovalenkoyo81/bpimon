@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"bpimon/internal/buildinfo"
-	"bpimon/internal/notifier"
+	"github.com/Kovalenkoyo81/bpimon/internal/buildinfo"
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 // rebootFlagFile lives in /tmp, which is cleared on every real reboot.

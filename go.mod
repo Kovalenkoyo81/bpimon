@@ -1,4 +1,4 @@
-module bpimon
+module github.com/Kovalenkoyo81/bpimon
 
 go 1.25.0
 

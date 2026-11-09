@@ -1,23 +1,24 @@
 package main
 
 import (
-	"bpimon/internal/alert"
-	"bpimon/internal/bot"
-	"bpimon/internal/buildinfo"
-	"bpimon/internal/config"
-	"log/slog"
-	"bpimon/internal/monitor"
-	"bpimon/internal/notifier"
-	"bpimon/internal/system"
-	"bpimon/internal/update"
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/alert"
+	"github.com/Kovalenkoyo81/bpimon/internal/bot"
+	"github.com/Kovalenkoyo81/bpimon/internal/buildinfo"
+	"github.com/Kovalenkoyo81/bpimon/internal/config"
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
+	"github.com/Kovalenkoyo81/bpimon/internal/system"
+	"github.com/Kovalenkoyo81/bpimon/internal/update"
 )
 
 const (

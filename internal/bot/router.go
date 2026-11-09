@@ -4,8 +4,9 @@ import (
 	"strings"
 
 	"log/slog"
-	"bpimon/internal/monitor"
-	"bpimon/internal/notifier"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 const usageHint = "Commands: /status /cpu /ram /disk /smart /sd /docker /restart <container> /reboot /poweroff /silence <min>|off /version"

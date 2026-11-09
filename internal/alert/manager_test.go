@@ -1,7 +1,6 @@
 package alert
 
 import (
-	"bpimon/internal/notifier"
 	"context"
 	"errors"
 	"os"
@@ -10,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 // stubAlert lets tests control what Evaluate() returns.

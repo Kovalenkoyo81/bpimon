@@ -9,7 +9,7 @@ import (
 
 	"log/slog"
 
-	"bpimon/internal/notifier"
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

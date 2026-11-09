@@ -8,7 +8,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-	"bpimon/internal/alert"
+	"github.com/Kovalenkoyo81/bpimon/internal/alert"
 )
 
 type fakeAPI struct {

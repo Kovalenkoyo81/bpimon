@@ -3,9 +3,9 @@ package bot
 import (
 	"time"
 
-	"bpimon/internal/alert"
-	"bpimon/internal/monitor"
-	"bpimon/internal/system"
+	"github.com/Kovalenkoyo81/bpimon/internal/alert"
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/system"
 )
 
 // SystemActions performs host actions requested by admins.
