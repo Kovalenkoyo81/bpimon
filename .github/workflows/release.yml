@@ -26,6 +26,12 @@ jobs:
         with:
           go-version: stable
 
+      # Fails early if CHANGELOG.md has no section for this tag
+      - name: release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: scripts/release-notes.sh "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+
       - name: build release artifacts
         env:
           VERSION: ${{ github.ref_name }}
@@ -36,4 +42,6 @@ jobs:
         with:
           files: dist/*
           fail_on_unmatched_files: true
+          body_path: ${{ runner.temp }}/release-notes.md
+          # Appends the auto-generated "Full Changelog" compare link
           generate_release_notes: true

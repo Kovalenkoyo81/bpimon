@@ -1,230 +1,293 @@
 # bpimon
 
 [![CI](https://github.com/Kovalenkoyo81/bpimon/actions/workflows/ci.yml/badge.svg)](https://github.com/Kovalenkoyo81/bpimon/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/badge/Go-1.25-blue)](https://go.dev)
+[![Release](https://img.shields.io/github/v/release/Kovalenkoyo81/bpimon)](https://github.com/Kovalenkoyo81/bpimon/releases/latest)
+[![Go](https://img.shields.io/github/go-mod/go-version/Kovalenkoyo81/bpimon)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Lightweight Telegram bot for basic Linux system monitoring. Originally built for single-board computers (Raspberry Pi, Orange Pi, Banana Pi), but works on any Linux machine — server, VPS, or desktop.
+A lightweight Telegram bot that watches a Linux machine and tells you when something goes wrong.
+It was built for single-board computers (Raspberry Pi, Orange Pi, Banana Pi) and works on any Linux server, VPS or desktop.
 
-Monitors CPU, RAM, disk, SMART drives, SD cards, and Docker containers. Sends alerts when thresholds are exceeded. Supports remote reboot/poweroff with confirmation.
+One static binary, no runtime dependencies, about 11 MB of RAM.
 
-![bpimon screenshot](assets/screenshot.jpg)
+![bpimon status message in Telegram](assets/screenshot.jpg)
+
+## Contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [How alerts work](#how-alerts-work)
+- [Bot commands](#bot-commands)
+- [Configuration](#configuration)
+- [Operations](#operations)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
 ## Features
 
-- CPU usage and temperature
-- RAM usage
-- Disk usage per partition
-- SMART drive health (temperature, life remaining)
-- SD/MMC card error monitoring via kernel log
-- Docker container status and remote restart
-- Alert system with cooldown, silence control, and state persistence
-- Remote reboot / poweroff with confirmation code
-- Rate limiting and admin-only commands
-- Works on any Linux SBC: arm64, armv7, armv6, amd64
+**Monitoring**
+- CPU usage, temperature and the top processes
+- RAM and disk usage per partition
+- SMART drive health: status, temperature, remaining life
+- SD/MMC card errors from the kernel log
+- Docker containers and the Docker daemon
 
-## Prerequisites
+**Alerts**
+- Threshold alerts with a reminder cooldown and a recovery message
+- A stopped container asks whether it was stopped on purpose, with buttons to answer
+- Alert state survives restarts
+- `/silence` for maintenance windows
+- Announces new bpimon releases
 
-- Go 1.25 or later — [install](https://go.dev/dl/)
-- A Telegram bot token — create one via [@BotFather](https://t.me/botfather)
-- Your Telegram chat ID — get it from [@userinfobot](https://t.me/userinfobot)
-- Optional: `smartctl` for SMART monitoring (`apt install smartmontools`)
-- Optional: `docker` CLI for container monitoring
+**Remote control**
+- Restart containers, reboot or power off the machine, each with a one-time confirmation code
+- Admin-only commands and per-user rate limiting
+
+**Platforms:** `amd64`, `arm64`, `armv7`, `armv6`.
 
 ## Quick start
 
-### Option A: install script (recommended, no Go required)
+You need:
+- a bot token from [@BotFather](https://t.me/botfather);
+- the chat ID the bot should post to. For a group it is a negative number; forward any message from the group to [@userinfobot](https://t.me/userinfobot) to see it;
+- your Telegram user ID, to be an admin. [@userinfobot](https://t.me/userinfobot) shows it too.
 
-Detects your architecture automatically, downloads the binary, and sets up the systemd service in one command.
-The binary, systemd unit and config example come from the same release and are verified against its `sha256sums.txt` before anything is installed.
+Install the latest release as a systemd service. The script detects the architecture and verifies every download against the release's `sha256sums.txt` before installing anything:
 
 ```bash
-export BPIMON_TELEGRAM_TOKEN=your_bot_token
-export BPIMON_TELEGRAM_CHATID=your_chat_id    # negative number for group chats
-export BPIMON_TELEGRAM_ADMINS=123456789        # your Telegram user ID
+export BPIMON_TELEGRAM_TOKEN=123456:ABC...
+export BPIMON_TELEGRAM_CHATID=-1001234567890
+export BPIMON_TELEGRAM_ADMINS=123456789
 curl -fsSL https://github.com/Kovalenkoyo81/bpimon/releases/latest/download/install.sh | sudo -E bash
 ```
 
-After installation, edit the config to match your hardware and restart:
+Then point the config at your hardware and restart:
 
 ```bash
-nano /etc/bpimon/config.yaml
-systemctl restart bpimon
+sudo nano /etc/bpimon/config.yaml
+sudo systemctl restart bpimon
 ```
 
-That's it — bot is running. Skip to [Check it works](#4-check-it-works).
+The bot posts a startup message with its version, the current system status and the command menu.
 
----
+> In a group chat, turn off privacy mode in @BotFather (`/setprivacy` → Disable), otherwise the bot does not see commands.
 
-**Or build from source:**
+<details>
+<summary><b>Build from source on the machine itself</b></summary>
 
-| | Cross-compile | Local build |
-|---|---|---|
-| **How** | Build on your laptop, upload to server | Build directly on the server |
-| **Best for** | Slow boards: Raspberry Pi Zero, Pi 1, Pi 2 | Faster boards: Pi 3/4/5, Orange Pi, Banana Pi |
-| **Requires Go on** | Your laptop/desktop | The server itself |
-| **Build time** | Seconds | Minutes (or longer on slow boards) |
-
-→ [Cross-compile from another machine](#managing-from-another-machine-optional) — recommended for slow or resource-constrained boards.
-
-→ Continue below for local build.
-
-### 1. Clone
+Requires Go (the version in [go.mod](go.mod) or newer). Suits faster boards: Raspberry Pi 3/4/5, Orange Pi, Banana Pi.
 
 ```bash
 git clone https://github.com/Kovalenkoyo81/bpimon.git
 cd bpimon
-cp config.yaml.example config.yaml
-```
-
-### 2. Configure
-
-Open `config.yaml` and set your devices. Everything else can stay at defaults:
-
-```yaml
-devices:
-  smart:
-    - /dev/sda        # remove if no external drives
-  docker:
-    - my-container    # list your Docker containers, or remove section
-```
-
-### 3. Install
-
-Set your Telegram credentials and run the installer:
-
-```bash
-export BPIMON_TELEGRAM_TOKEN=your_bot_token
-export BPIMON_TELEGRAM_CHATID=your_chat_id    # negative number for group chats
-export BPIMON_TELEGRAM_ADMINS=123456789        # your Telegram user ID
+cp config.yaml.example config.yaml   # edit devices
+export BPIMON_TELEGRAM_TOKEN=... BPIMON_TELEGRAM_CHATID=... BPIMON_TELEGRAM_ADMINS=...
 sudo -E make install
 ```
 
-The installer builds the binary, installs it to `/usr/local/bin`, stores credentials in `/etc/bpimon/env` (mode `600`, readable only by root), and starts the service. You only need to set these variables once — they are saved on the machine and survive reboots.
+`make install` builds the binary, installs it to `/usr/local/bin`, writes the config and credentials to `/etc/bpimon` and starts the service.
 
-### 4. Check it works
+</details>
 
-```bash
-make status
-make logs
-```
+<details>
+<summary><b>Cross-compile and deploy from another machine</b></summary>
 
----
-
-## Managing from another machine (optional)
-
-**Recommended for slow or resource-constrained boards** (Raspberry Pi Zero, Pi 1, Pi 2, any board where compiling takes too long). Build on your laptop or desktop in seconds, upload the ready binary via SSH.
+Recommended for slow boards (Raspberry Pi Zero, Pi 1, Pi 2): the build takes seconds on a laptop. Requires Go locally and root SSH access to the target.
 
 ```bash
-# Set credentials in your current shell session
-export BPIMON_TELEGRAM_TOKEN=your_bot_token
-export BPIMON_TELEGRAM_CHATID=your_chat_id
-export BPIMON_TELEGRAM_ADMINS=123456789
-
-# Deploy (cross-compiles and uploads via SSH)
-make deploy SERVER=user@your-sbc-ip
+cp config.yaml.example config.yaml   # edit devices
+export BPIMON_TELEGRAM_TOKEN=... BPIMON_TELEGRAM_CHATID=... BPIMON_TELEGRAM_ADMINS=...
+make deploy SERVER=root@your-board                          # arm64 (default)
+make deploy SERVER=root@your-board GOARCH=arm GOARM=7       # armv7: Pi 2/3 32-bit, Orange Pi, Banana Pi
+make deploy SERVER=root@your-board GOARCH=arm GOARM=6       # armv6: Pi 1, Zero
+make deploy SERVER=root@your-board GOARCH=amd64             # x86_64
 ```
 
-Default target architecture is `linux/arm64`. For other boards:
+`make deploy` overwrites the remote `config.yaml` and `/etc/bpimon/env` with your local ones.
 
-```bash
-make deploy SERVER=user@host GOARCH=arm GOARM=7   # Raspberry Pi 2/3, Orange Pi, Banana Pi (armv7)
-make deploy SERVER=user@host GOARCH=arm GOARM=6   # Raspberry Pi 1, Zero
-make deploy SERVER=user@host GOARCH=amd64         # x86_64
-```
+</details>
 
-Check status and logs remotely:
+## How alerts work
 
-```bash
-make status SERVER=user@your-sbc-ip
-make logs   SERVER=user@your-sbc-ip
-```
+Every `interval_min` minutes bpimon checks each alert:
 
----
+| Alert | Fires when |
+|---|---|
+| CPU | usage ≥ `cpu` % since the previous check; includes the top processes |
+| CPU Temp | temperature ≥ `cpu_temp` °C |
+| Memory | RAM usage ≥ `ram` % |
+| Disk | any partition ≥ `disk` % |
+| SMART | health is not PASSED, temperature ≥ `smart_temp` °C, or remaining life ≤ `smart_life` % |
+| SD | the kernel log has errors for the card |
+| Docker container | the container is not running, or was removed |
+| Docker daemon | the daemon does not respond |
 
-## Configuration reference
+**Lifecycle.** When a condition appears, bpimon sends 🚨. While it lasts, it repeats the alert every `cooldown_min` minutes. When it clears, it sends ✅ *back to normal*.
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `telegram.enabled` | `true` | Enable Telegram bot |
-| `thresholds.cpu` | `85` | CPU usage alert threshold (%) |
-| `thresholds.cpu_temp` | `70` | CPU temperature alert threshold (°C) |
-| `thresholds.ram` | `90` | RAM usage alert threshold (%) |
-| `thresholds.disk` | `85` | Disk usage alert threshold (%) |
-| `thresholds.smart_temp` | `55` | SMART drive temperature threshold (°C) |
-| `thresholds.smart_life` | `20` | SMART drive remaining life threshold (%) |
-| `thresholds.interval_min` | `2` | Alert check interval (minutes) |
-| `thresholds.cooldown_min` | `30` | Minimum time between repeated alerts (minutes) |
-| `devices.smart` | `[]` | Block devices to monitor with SMART (e.g. `/dev/sda`) |
-| `devices.mmc` | `[]` | SD/MMC devices to monitor (e.g. `mmcblk0`). Auto-discovered if omitted. |
-| `devices.docker` | `[]` | Docker containers to monitor |
+**Stopped containers.** A stopped container may have been stopped on purpose, so the alert asks:
 
-### Environment variables
+- **✋ Stopped by admin**: bpimon stays silent until the container runs again, with no ✅ afterwards.
+- **💥 Crashed**: reminders continue every `cooldown_min` until it recovers, then ✅.
+- No answer: the question is repeated every `cooldown_min`. Only the latest question keeps its buttons.
 
-| Variable | Description |
-|----------|-------------|
-| `BPIMON_TELEGRAM_TOKEN` | Bot token from @BotFather |
-| `BPIMON_TELEGRAM_CHATID` | Target chat ID (negative for group chats) |
-| `BPIMON_TELEGRAM_ADMINS` | Comma-separated list of admin user IDs |
+Only admins can answer. If the container stops again later, that is a new incident and bpimon asks again right away.
+
+**When a check cannot run.** If a value cannot be read (smartctl fails, the Docker daemon is down, a command times out after 10 s), the alert keeps its previous state: no false ✅ and no false 🚨. The reason is logged once. While the Docker daemon is down, a single *Docker daemon unavailable* alert replaces the alerts of the individual containers.
+
+**State.** With `-state` (the systemd unit sets it), active alerts, answers and open questions are saved to `/var/lib/bpimon/alert_state.json` on every change, so a restart or an update does not repeat known alerts.
+
+**Silence.** `/silence 60` mutes all alerts for an hour; bpimon tells you when the silence ends. Silence is not kept across restarts.
+
+**Updates.** Once a day bpimon checks the latest GitHub release and announces a newer version once, with its release notes. It never updates itself.
 
 ## Bot commands
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `/status` | Full system status |
-| `/cpu` | CPU usage and temperature |
+| `/cpu` | CPU usage (0.5 s sample), temperature, top processes |
 | `/ram` | RAM usage |
 | `/disk` | Disk usage per partition |
 | `/smart` | SMART drive health |
-| `/sd` | SD card error status |
-| `/docker` | Docker container status |
-| `/restart <name>` | Restart a Docker container (confirmation required) |
-| `/reboot` | Reboot the server (confirmation required) |
-| `/poweroff` | Shut down the server (confirmation required) |
-| `/silence <minutes>` | Silence alerts for N minutes |
-| `/silence off` | Resume alerts |
-| `/silence` | Show current silence status |
-| `/help` | Show command list |
+| `/sd` | SD card status |
+| `/docker` | Docker daemon and container status |
+| `/restart <name>` | Restart a container (4-digit confirmation code) 🔒 |
+| `/reboot` | Reboot the machine (6-digit confirmation code) 🔒 |
+| `/poweroff` | Shut down the machine (6-digit confirmation code) 🔒 |
+| `/silence <minutes>` | Silence alerts, up to 7 days 🔒 |
+| `/silence off` | Resume alerts 🔒 |
+| `/silence` | Show silence status 🔒 |
+| `/version` | bpimon version, build, uptime and the latest release |
+| `/help` | Command menu, with a `/restart_<name>` shortcut per container |
 
-Admin commands (`/restart`, `/reboot`, `/poweroff`, `/silence`) require the sender's ID to be listed in `BPIMON_TELEGRAM_ADMINS`.
+🔒 Admin only: the sender's ID must be in `BPIMON_TELEGRAM_ADMINS`. The alert buttons are admin-only too. Confirmation codes expire after 60 s. Each user can send 5 commands per 10 s.
 
-## Makefile reference
+## Configuration
 
-```bash
-make install            # build natively and install on this machine (run on the SBC)
-make status             # systemctl status (local)
-make logs               # last 50 log lines (local)
-make follow             # live log stream (local)
+bpimon reads `/etc/bpimon/config.yaml`. The Telegram credentials normally come from `/etc/bpimon/env` (mode 600) rather than from the config file.
 
-make deploy SERVER=...  # cross-compile and deploy to a remote machine
-make status SERVER=...  # systemctl status on remote machine
-make logs   SERVER=...  # last 50 log lines from remote machine
-make follow SERVER=...  # live log stream from remote machine
+```yaml
+telegram:
+  enabled: true            # false: print alerts to stdout instead (for testing)
+  # token: ...             # usually set via BPIMON_TELEGRAM_TOKEN
+  # chat_id: -100...       # usually set via BPIMON_TELEGRAM_CHATID
+  # admins: [123456789]    # usually set via BPIMON_TELEGRAM_ADMINS
 
-make build              # cross-compile binary only
-make test               # run tests
-make vet                # run go vet
+thresholds:
+  cpu: 85                  # % CPU usage
+  cpu_temp: 70             # °C
+  ram: 90                  # % RAM usage
+  disk: 85                 # % usage of any partition
+  smart_temp: 55           # °C drive temperature
+  smart_life: 20           # % remaining drive life
+  interval_min: 2          # minutes between checks
+  cooldown_min: 30         # minutes between reminders of an active alert
+
+devices:
+  smart:                   # block devices for SMART (needs smartmontools)
+    - /dev/sda
+  mmc:                     # SD cards; optional, cards are auto-discovered
+    - mmcblk0
+  docker:                  # containers to watch (needs the docker CLI)
+    - bpi-auto-discover    # all containers running when bpimon starts
+    # - my-container       # or list names instead
 ```
 
-Key variables: `SERVER`, `GOOS`, `GOARCH`, `GOARM`. `VERSION` is auto-detected from the latest git tag.
+| Key | Example default | Notes |
+|---|---|---|
+| `telegram.enabled` | `true` | Must be set explicitly; an omitted key means `false` |
+| `telegram.token`, `chat_id`, `admins` | — | Overridden by the environment variables below |
+| `thresholds.cpu` | `85` | % |
+| `thresholds.cpu_temp` | `70` | °C |
+| `thresholds.ram` | `90` | % |
+| `thresholds.disk` | `85` | % |
+| `thresholds.smart_temp` | `55` | °C; required if `devices.smart` is set |
+| `thresholds.smart_life` | `20` | %, 0–100 |
+| `thresholds.interval_min` | `2` | minutes, > 0 |
+| `thresholds.cooldown_min` | `30` | minutes, > 0 |
+| `devices.smart` | `[/dev/sda]` | Skipped with a warning if `smartctl` is missing |
+| `devices.mmc` | auto | Names like `mmcblk0` |
+| `devices.docker` | `[bpi-auto-discover]` | Auto-discovery runs once at startup; restart bpimon to pick up new containers |
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `BPIMON_TELEGRAM_TOKEN` | Bot token from @BotFather |
+| `BPIMON_TELEGRAM_CHATID` | Chat to post to (negative for groups) |
+| `BPIMON_TELEGRAM_ADMINS` | Comma-separated admin user IDs |
+| `BPIMON_DEBUG` | Any value: debug logging, including full bot responses |
+
+### Command-line flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `-config` | `config.yaml` | Path to the config file |
+| `-state` | none | Alert state file; without it, state is not kept across restarts |
+| `-version` | | Print version, build date and platform, then exit |
+
+The systemd unit runs `bpimon -config /etc/bpimon/config.yaml -state /var/lib/bpimon/alert_state.json`.
+
+## Operations
+
+**Logs**
+
+```bash
+journalctl -u bpimon -f                                   # follow
+journalctl -u bpimon --since today | grep -E 'level=(WARN|ERROR)'  # problems only
+```
+
+Logs are structured (`log/slog`), one event per line. The level is part of the text, so filter by `level=` rather than with `journalctl -p`:
+
+```
+time=2026-11-09T22:37:51.306Z level=INFO msg="alert state loaded" path=/var/lib/bpimon/alert_state.json
+time=2026-11-09T23:10:02.114Z level=WARN msg="alert state unknown" alert="Docker app" reason="docker daemon unavailable: ..."
+```
+
+**Updating.** The bot announces new releases. To install one, re-run the install command from [Quick start](#quick-start) with the same environment variables. The config and the alert state are kept; the credentials file is rewritten from the variables.
+
+**Files**
+
+| Path | Contents |
+|---|---|
+| `/usr/local/bin/bpimon` | Binary |
+| `/etc/bpimon/config.yaml` | Configuration |
+| `/etc/bpimon/env` | Telegram credentials (mode 600) |
+| `/var/lib/bpimon/alert_state.json` | Alert state |
+| `/etc/systemd/system/bpimon.service` | systemd unit |
+
+**Uninstall**
+
+```bash
+sudo systemctl disable --now bpimon
+sudo rm -rf /usr/local/bin/bpimon /etc/bpimon /var/lib/bpimon /etc/systemd/system/bpimon.service
+sudo systemctl daemon-reload
+```
 
 ## Troubleshooting
 
-**Bot doesn't respond**
-Check that the bot is running (`make status`) and that you sent the message to the correct chat. In group chats, the bot must have access to messages — disable privacy mode via @BotFather (`/setprivacy → Disable`).
+**The bot does not answer commands.** Check `systemctl status bpimon` and the logs. In a group, disable privacy mode in @BotFather (`/setprivacy` → Disable). Commands from other chats are ignored: check `BPIMON_TELEGRAM_CHATID`.
 
-**"SMART unavailable"**
-Install smartmontools: `apt install smartmontools`. The bot skips SMART silently if `smartctl` is not found.
+**"Only admins can …".** Add your user ID to `BPIMON_TELEGRAM_ADMINS` in `/etc/bpimon/env` and restart.
 
-**"docker not found"**
-The bot skips Docker monitoring if the `docker` CLI is not in PATH. Make sure docker is installed and accessible by root.
+**Alert buttons spin and nothing happens.** Update to v1.7.0 or newer; older versions did not request button presses from Telegram.
 
-**No temperature reading**
-Some boards expose CPU temperature under non-standard thermal zone names. The bot searches for zones named `cpu`, `soc`, `arm`, `pkg`, `core`. If your board uses a different name, open an issue.
+**"SMART unavailable".** Install smartmontools (`apt install smartmontools`). Without `smartctl`, SMART is skipped with a warning in the log.
 
-**Chat ID is wrong**
-Group chat IDs are negative numbers. Forward any message from the group to [@userinfobot](https://t.me/userinfobot) to get the correct ID.
+**"docker not found".** The `docker` CLI must be in root's `PATH`. Without it, Docker monitoring is skipped with a warning.
+
+**A new container is not monitored.** `bpi-auto-discover` looks for containers once at startup. Restart bpimon: `systemctl restart bpimon`.
+
+**No CPU temperature.** bpimon reads `/sys/class/thermal/thermal_zone*` and prefers zones whose type contains `x86_pkg_temp`, `k10temp`, `cpu`, `soc`, `ap`, `arm`, `pkg`, `core` or `acpi`, in that order. If your board uses another name, please open an issue with the output of `cat /sys/class/thermal/thermal_zone*/type`.
+
+**"state unknown" in the log.** A check could not read its value: a command failed or timed out, or the Docker daemon is down. The alert keeps its last state until the value can be read again.
+
+## Development
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): packages, data flow, alert lifecycle.
+- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md): local setup, checks, conventions, releases.
+- [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT, see [LICENSE](LICENSE).
