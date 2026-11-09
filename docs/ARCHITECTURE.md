@@ -24,7 +24,8 @@ flowchart TD
     alert --> config
     alert --> notifier
     update --> notifier
-    bot -. implements .-> notifier
+    main --> notifier
+    bot --> notifier
 ```
 
 | Package | Responsibility |
@@ -36,7 +37,7 @@ flowchart TD
 | `internal/bot` | Telegram: the API wrapper, the **Dispatcher** that routes updates, the command **Handler** and the button **CallbackHandler**. |
 | `internal/system` | Host actions: reboot, poweroff, docker restart/inspect, each with a timeout. |
 | `internal/update` | Finds the latest GitHub release, compares versions and announces each new release once. |
-| `internal/notifier` | `Notifier`, `AlertSender` and `ButtonSender` interfaces, and `Dummy` for running without Telegram. |
+| `internal/notifier` | `Notifier`, `AlertSender` and `ButtonSender` interfaces (implemented by `bot.Bot`), and `Dummy` for running without Telegram. |
 | `internal/buildinfo` | Version, build date and uptime of the running binary. |
 
 Only `bot` and `cmd/bpimon` import the Telegram library.
