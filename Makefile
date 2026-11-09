@@ -14,7 +14,7 @@ else
   REMOTE :=
 endif
 
-.PHONY: install build dist deploy test vet logs follow status
+.PHONY: install build dist deploy test vet lint logs follow status
 
 # Install locally on this machine (run directly on the SBC)
 install:
@@ -68,6 +68,10 @@ test:
 
 vet:
 	go vet ./...
+
+# Same static checks as CI
+lint: vet
+	go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
 
 status:
 	$(REMOTE) systemctl status bpimon --no-pager

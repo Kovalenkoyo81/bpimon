@@ -1,8 +1,9 @@
 package alert
 
 import (
-	"bpimon/internal/monitor"
 	"fmt"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 )
 
 type CPU struct {
@@ -16,17 +17,17 @@ func NewCPU(c monitor.CPUReader, max float64) *CPU {
 
 func (a *CPU) Name() string { return "CPU" }
 
-func (a *CPU) Check() (bool, string) {
+func (a *CPU) Evaluate() (Verdict, string) {
 	s, err := a.cpu.Usage()
 	if err != nil {
-		return false, ""
+		return Unknown, err.Error()
 	}
 	if s.UsagePct >= a.max {
 		msg := fmt.Sprintf("usage %.1f%%", s.UsagePct)
 		if top := monitor.TopProcs(3); top != "" {
 			msg += "\n📋 Top: " + top
 		}
-		return true, msg
+		return Firing, msg
 	}
-	return false, ""
+	return Clear, ""
 }

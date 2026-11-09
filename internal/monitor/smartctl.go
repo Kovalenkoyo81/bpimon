@@ -24,7 +24,7 @@ func (s Smart) Available() bool {
 }
 
 func runSmartctl(device string) (SmartHealth, error) {
-	out, err := exec.Command("smartctl", "-a", "-j", "--nocheck=standby", device).Output()
+	out, err := output("smartctl", "-a", "-j", "--nocheck=standby", device)
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			// Bit 1 (value 2): device in standby — partial output may still be valid

@@ -1,8 +1,9 @@
 package alert
 
 import (
-	"bpimon/internal/monitor"
 	"fmt"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 )
 
 type CPUTemp struct {
@@ -16,13 +17,13 @@ func NewCPUTemp(c monitor.CPUTempReader, max float64) *CPUTemp {
 
 func (a *CPUTemp) Name() string { return "CPU Temp" }
 
-func (a *CPUTemp) Check() (bool, string) {
+func (a *CPUTemp) Evaluate() (Verdict, string) {
 	t, err := a.cpu.TempC()
 	if err != nil {
-		return false, ""
+		return Unknown, err.Error()
 	}
 	if t >= a.max {
-		return true, fmt.Sprintf("%.1f°C", t)
+		return Firing, fmt.Sprintf("%.1f°C", t)
 	}
-	return false, ""
+	return Clear, ""
 }

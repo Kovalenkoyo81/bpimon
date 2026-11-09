@@ -1,8 +1,8 @@
 package alert
 
 import (
-	"bpimon/internal/config"
-	"bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/config"
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 )
 
 // FromProviders creates alerts for all given providers.

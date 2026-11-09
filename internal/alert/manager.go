@@ -1,12 +1,13 @@
 package alert
 
 import (
-	"bpimon/internal/log"
-	"bpimon/internal/notifier"
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
 type Manager struct {
@@ -18,7 +19,8 @@ type Manager struct {
 	lastSent      map[string]time.Time
 	active        map[string]bool
 	resolution    map[string]Resolution
-	question      map[string]int // alert name → message ID of the latest question with buttons
+	question      map[string]int  // alert name → message ID of the latest question with buttons
+	unknown       map[string]bool // alerts currently in Unknown state (for log de-duplication)
 	silencedUntil time.Time
 	statePath     string
 	saveMu        sync.Mutex // serialises state file writes
@@ -62,6 +64,7 @@ func NewManager(a []Alert, n notifier.AlertSender, interval, cooldown time.Durat
 		active:     make(map[string]bool),
 		resolution: make(map[string]Resolution),
 		question:   make(map[string]int),
+		unknown:    make(map[string]bool),
 	}
 }
 
@@ -110,7 +113,7 @@ func (m *Manager) Resolve(name string, r Resolution) error {
 	m.mu.Unlock()
 
 	if !active {
-		switch v, _ := evaluate(a); v {
+		switch v, _ := a.Evaluate(); v {
 		case Clear:
 			return ErrNotActive
 		case Unknown:
@@ -176,7 +179,8 @@ func (m *Manager) checkAll() {
 // checkOne evaluates a single alert and reports whether state changed.
 func (m *Manager) checkOne(a Alert) bool {
 	name := a.Name()
-	verdict, msg := evaluate(a)
+	verdict, msg := a.Evaluate()
+	m.trackUnknown(name, verdict, msg)
 	if verdict == Unknown {
 		return false // keep previous state: no false recovery, no false alarm
 	}
@@ -253,10 +257,26 @@ func (m *Manager) sendQuestion(name, text string, a Askable) int {
 		{Text: incident, Data: CallbackData(name, Incident)},
 	})
 	if err != nil {
-		log.Warn.Printf("send question for %s: %v", name, err)
+		slog.Warn("send question failed", "alert", name, "err", err)
 		return 0
 	}
 	return id
+}
+
+// trackUnknown logs when an alert becomes undeterminable and when it
+// recovers, instead of on every check.
+func (m *Manager) trackUnknown(name string, v Verdict, reason string) {
+	m.mu.Lock()
+	was := m.unknown[name]
+	now := v == Unknown
+	m.unknown[name] = now
+	m.mu.Unlock()
+	switch {
+	case now && !was:
+		slog.Warn("alert state unknown", "alert", name, "reason", reason)
+	case !now && was:
+		slog.Info("alert state known again", "alert", name, "verdict", v.String())
+	}
 }
 
 func (m *Manager) clearButtons(msgID int) {
@@ -268,6 +288,6 @@ func (m *Manager) clearButtons(msgID int) {
 		return
 	}
 	if err := bs.ClearButtons(msgID); err != nil {
-		log.Warn.Printf("clear buttons on message %d: %v", msgID, err)
+		slog.Warn("clear buttons failed", "message_id", msgID, "err", err)
 	}
 }

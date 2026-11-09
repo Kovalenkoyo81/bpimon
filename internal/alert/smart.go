@@ -1,8 +1,9 @@
 package alert
 
 import (
-	"bpimon/internal/monitor"
 	"fmt"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
 )
 
 type Smart struct {
@@ -19,19 +20,19 @@ func (a *Smart) Name() string {
 	return "SMART " + a.s.DeviceName()
 }
 
-func (a *Smart) Check() (bool, string) {
+func (a *Smart) Evaluate() (Verdict, string) {
 	h, err := a.s.Health()
 	if err != nil {
-		return false, ""
+		return Unknown, err.Error()
 	}
 	if h.Health != "PASSED" {
-		return true, "FAILED"
+		return Firing, "FAILED"
 	}
 	if h.Temp >= 0 && h.Temp >= a.temp {
-		return true, fmt.Sprintf("temp %d°C", h.Temp)
+		return Firing, fmt.Sprintf("temp %d°C", h.Temp)
 	}
 	if h.Life >= 0 && h.Life <= a.life {
-		return true, fmt.Sprintf("life %d%%", h.Life)
+		return Firing, fmt.Sprintf("life %d%%", h.Life)
 	}
-	return false, ""
+	return Clear, ""
 }

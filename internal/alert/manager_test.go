@@ -1,7 +1,6 @@
 package alert
 
 import (
-	"bpimon/internal/notifier"
 	"context"
 	"errors"
 	"os"
@@ -10,17 +9,24 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 )
 
-// stubAlert lets tests control what Check() returns.
+// stubAlert lets tests control what Evaluate() returns.
 type stubAlert struct {
 	name   string
 	firing bool
 	msg    string
 }
 
-func (s *stubAlert) Name() string          { return s.name }
-func (s *stubAlert) Check() (bool, string) { return s.firing, s.msg }
+func (s *stubAlert) Name() string { return s.name }
+func (s *stubAlert) Evaluate() (Verdict, string) {
+	if s.firing {
+		return Firing, s.msg
+	}
+	return Clear, ""
+}
 
 // collectingNotifier captures sent messages.
 type collectingNotifier struct {
@@ -400,7 +406,6 @@ type verdictStub struct {
 }
 
 func (s *verdictStub) Name() string                { return s.name }
-func (s *verdictStub) Check() (bool, string)       { return s.v == Firing, "" }
 func (s *verdictStub) Evaluate() (Verdict, string) { return s.v, "down" }
 
 func TestUnknownKeepsActiveStateWithoutMessages(t *testing.T) {

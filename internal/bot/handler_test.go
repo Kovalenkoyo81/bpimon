@@ -1,29 +1,42 @@
 package bot
 
 import (
-	"bpimon/internal/log"
-	"bpimon/internal/monitor"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-)
 
-func init() {
-	log.Init()
-}
+	"github.com/Kovalenkoyo81/bpimon/internal/monitor"
+	"github.com/Kovalenkoyo81/bpimon/internal/system"
+)
 
 // --- test doubles ---
 
 type mockProvider struct{ name, status string }
 
-func (m mockProvider) Name() string            { return m.name }
+func (m mockProvider) Name() string { return m.name }
+func (m mockProvider) Kind() monitor.Kind {
+	switch strings.Fields(m.name)[0] {
+	case "CPU":
+		return monitor.KindCPU
+	case "RAM":
+		return monitor.KindRAM
+	case "Disk":
+		return monitor.KindDisk
+	case "SMART":
+		return monitor.KindSmart
+	case "SD":
+		return monitor.KindSD
+	}
+	return 0
+}
 func (m mockProvider) Status() (string, error) { return m.status, nil }
 
 // mockDockerProvider satisfies monitor.ContainerProvider without calling docker.
 type mockDockerProvider struct{ container string }
 
-func (m mockDockerProvider) Name() string { return "Docker " + m.container }
+func (m mockDockerProvider) Name() string       { return "Docker " + m.container }
+func (m mockDockerProvider) Kind() monitor.Kind { return monitor.KindDocker }
 func (m mockDockerProvider) Status() (string, error) {
 	return "🐳 " + m.container + " — ✅ running", nil
 }
@@ -51,13 +64,38 @@ func (m *mockSender) first() string {
 	return m.msgs[0]
 }
 
+// fakeSystem records host actions instead of running them.
+type fakeSystem struct {
+	mu         sync.Mutex
+	canPower   bool
+	restartErr error
+	restarted  []string
+	rebooted   bool
+}
+
+func (f *fakeSystem) CanPower() bool { return f.canPower }
+func (f *fakeSystem) Reboot() error  { f.mu.Lock(); f.rebooted = true; f.mu.Unlock(); return nil }
+func (f *fakeSystem) Poweroff() error {
+	return nil
+}
+func (f *fakeSystem) RestartContainer(name string) error {
+	f.mu.Lock()
+	f.restarted = append(f.restarted, name)
+	f.mu.Unlock()
+	return f.restartErr
+}
+func (f *fakeSystem) ContainerState(string) (system.ContainerState, error) {
+	return system.ContainerState{Status: "running"}, nil
+}
+
 func newHandler(adminIDs []int64, providers []monitor.Provider) *Handler {
-	return &Handler{
-		Providers: providers,
-		Admins:    adminIDs,
-		confirm:   NewConfirmator(60 * time.Second),
-		limiter:   NewRateLimiter(10*time.Second, 100),
-	}
+	return newHandlerWith(adminIDs, providers, &fakeSystem{canPower: true})
+}
+
+func newHandlerWith(adminIDs []int64, providers []monitor.Provider, sys SystemActions) *Handler {
+	h := NewHandler(HandlerConfig{Providers: providers, Admins: adminIDs, System: sys})
+	h.limiter = NewRateLimiter(10*time.Second, 100)
+	return h
 }
 
 // --- tests ---
@@ -205,5 +243,95 @@ func TestHandleConfirmDockerSendsRestartingMessage(t *testing.T) {
 	}
 	if !strings.Contains(s.first(), "Restarting") {
 		t.Errorf("expected 'Restarting myapp...' as first message, got %q", s.first())
+	}
+}
+
+type kindProvider struct {
+	kind         monitor.Kind
+	name, status string
+}
+
+func (k kindProvider) Name() string            { return k.name }
+func (k kindProvider) Kind() monitor.Kind      { return k.kind }
+func (k kindProvider) Status() (string, error) { return k.status, nil }
+
+// Commands select providers by Kind, not by display name.
+func TestCommandsSelectByKindNotName(t *testing.T) {
+	h := newHandler(nil, []monitor.Provider{
+		kindProvider{monitor.KindDocker, "Whale engine", "daemon_ok"},
+		kindProvider{monitor.KindRAM, "Docker-looking RAM", "ram_ok"},
+	})
+	got := h.Handle("/docker", 1, nil)
+	if !strings.Contains(got, "daemon_ok") || strings.Contains(got, "ram_ok") {
+		t.Fatalf("/docker = %q", got)
+	}
+	if got := h.Handle("/ram", 1, nil); got != "ram_ok" {
+		t.Fatalf("/ram = %q", got)
+	}
+}
+
+func TestConfirmRestartRunsActionAndReports(t *testing.T) {
+	sys := &fakeSystem{}
+	h := newHandlerWith([]int64{1}, []monitor.Provider{mockDockerProvider{"my-app"}}, sys)
+	resp := h.Handle("/restart my-app", 1, &mockSender{})
+	code := strings.TrimSuffix(strings.Fields(resp[strings.Index(resp, "/confirm "):])[1], "`")
+
+	s := &mockSender{}
+	h.Handle("/confirm "+code, 1, s)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		s.mu.Lock()
+		n := len(s.msgs)
+		s.mu.Unlock()
+		if n >= 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
+	if len(sys.restarted) != 1 || sys.restarted[0] != "my-app" {
+		t.Fatalf("expected restart of my-app, got %v", sys.restarted)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.msgs) < 2 || !strings.Contains(s.msgs[1], "✅ Status: running") {
+		t.Fatalf("expected success report, got %v", s.msgs)
+	}
+}
+
+func TestRebootUnavailableWithoutSystemctl(t *testing.T) {
+	h := newHandlerWith([]int64{1}, nil, &fakeSystem{canPower: false})
+	if got := h.Handle("/reboot", 1, nil); !strings.Contains(got, "unavailable") {
+		t.Fatalf("/reboot = %q", got)
+	}
+}
+
+func TestConfirmRebootCallsSystem(t *testing.T) {
+	sys := &fakeSystem{canPower: true}
+	h := newHandlerWith([]int64{1}, nil, sys)
+	resp := h.Handle("/reboot", 1, nil)
+	code := strings.Fields(resp[strings.Index(resp, "/confirm "):])[1]
+	code = strings.Trim(code, "`")
+	if got := h.Handle("/confirm "+code, 1, nil); !strings.Contains(got, "reboot initiated") {
+		t.Fatalf("/confirm = %q", got)
+	}
+	if !sys.rebooted {
+		t.Fatal("Reboot was not called")
+	}
+}
+
+func TestParseCommand(t *testing.T) {
+	cases := map[string]string{
+		"/Reboot@MyBot":            "/reboot",
+		"/restart@MyBot syncthing": "/restart syncthing",
+		"/silence 30":              "/silence 30",
+		"/x a@b":                   "/x a@b",
+		"  ":                       "",
+	}
+	for in, want := range cases {
+		if got := strings.Join(parseCommand(in), " "); got != want {
+			t.Errorf("parseCommand(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

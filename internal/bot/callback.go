@@ -1,8 +1,9 @@
 package bot
 
 import (
-	"bpimon/internal/alert"
 	"errors"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/alert"
 )
 
 // CallbackResult tells the caller how to react to a button press.

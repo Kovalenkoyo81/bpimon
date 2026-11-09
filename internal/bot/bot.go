@@ -1,10 +1,15 @@
 package bot
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
-	"bpimon/internal/notifier"
+	"log/slog"
+
+	"github.com/Kovalenkoyo81/bpimon/internal/notifier"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -22,8 +27,17 @@ func New(token string, chatID int64) (*Bot, error) {
 	return &Bot{api: api, chatID: chatID}, nil
 }
 
+// Send sends a plain message. Failures are logged here, so callers that
+// cannot do anything about them may ignore the error.
 func (b *Bot) Send(text string) error {
 	_, err := b.api.Send(tgbotapi.NewMessage(b.chatID, text))
+	return logSendErr("send message", err)
+}
+
+func logSendErr(what string, err error) error {
+	if err != nil {
+		slog.Error("telegram request failed", "op", what, "err", err)
+	}
 	return err
 }
 
@@ -42,7 +56,7 @@ func (b *Bot) SendAlertWithButtons(text string, buttons []notifier.Button) (int,
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(row)
 	sent, err := b.api.Send(msg)
 	if err != nil {
-		return 0, err
+		return 0, logSendErr("send alert with buttons", err)
 	}
 	return sent.MessageID, nil
 }
@@ -82,16 +96,35 @@ func newUpdateConfig() tgbotapi.UpdateConfig {
 	return u
 }
 
-// UpdatesChan returns a channel of incoming updates.
-// The channel closes if the Telegram connection is lost.
+// UpdatesChan returns the channel of incoming updates. The library retries
+// failed polls on its own; the channel is closed only by StopUpdates.
 func (b *Bot) UpdatesChan() <-chan tgbotapi.Update {
-	upstream := b.api.GetUpdatesChan(newUpdateConfig())
-	out := make(chan tgbotapi.Update)
-	go func() {
-		defer close(out)
-		for u := range upstream {
-			out <- u
+	return b.api.GetUpdatesChan(newUpdateConfig())
+}
+
+// StopUpdates stops long polling and closes the updates channel.
+func (b *Bot) StopUpdates() { b.api.StopReceivingUpdates() }
+
+// Connect retries New with linear backoff (5s steps, max 60s) until it
+// succeeds or ctx is cancelled. This covers DNS or network not being ready
+// at boot.
+func Connect(ctx context.Context, token string, chatID int64) (*Bot, error) {
+	for attempt := 1; ; attempt++ {
+		b, err := New(token, chatID)
+		if err == nil {
+			return b, nil
 		}
-	}()
-	return out
+		delay := min(time.Duration(attempt)*5*time.Second, 60*time.Second)
+		msg := "connection failed"
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			msg = urlErr.Err.Error()
+		}
+		slog.Warn("telegram unavailable", "attempt", attempt, "reason", msg, "retry_in", delay)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }

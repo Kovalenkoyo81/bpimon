@@ -46,23 +46,22 @@ type Config struct {
 	} `yaml:"devices"`
 }
 
-func Load(path string) *Config {
+// Load reads, parses, applies environment overrides to and validates the
+// config file.
+func Load(path string) (*Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot read config file %q: %v\n", path, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("cannot read config file %q: %w", path, err)
 	}
 	var c Config
 	if err := yaml.Unmarshal(b, &c); err != nil {
-		fmt.Fprintf(os.Stderr, "cannot parse config file %q: %v\n", path, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("cannot parse config file %q: %w", path, err)
 	}
 	c.applyEnvOverrides()
 	if err := c.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("config error: %w", err)
 	}
-	return &c
+	return &c, nil
 }
 
 func (c *Config) Validate() error {

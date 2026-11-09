@@ -3,7 +3,6 @@ package monitor
 import (
 	"bufio"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -21,7 +20,7 @@ type DiskUsage struct {
 func (Disk) Name() string { return "Disk" }
 
 func (Disk) Usage() ([]DiskUsage, error) {
-	out, err := exec.Command("df", "-P").Output()
+	out, err := output("df", "-P")
 	if err != nil {
 		return nil, err
 	}

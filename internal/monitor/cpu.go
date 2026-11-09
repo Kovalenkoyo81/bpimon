@@ -3,53 +3,101 @@ package monitor
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 type CPUStat struct {
 	UsagePct float64
 }
 
+// cpuTimes is a snapshot of the aggregate "cpu" line of /proc/stat.
+type cpuTimes struct {
+	idle, total uint64
+}
+
+func readCPUTimes() (cpuTimes, error) {
+	b, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return cpuTimes{}, err
+	}
+	line, _, _ := strings.Cut(string(b), "\n")
+	fields := strings.Fields(line)
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return cpuTimes{}, fmt.Errorf("unexpected /proc/stat format")
+	}
+	var t cpuTimes
+	for i, f := range fields[1:] {
+		v, _ := strconv.ParseUint(f, 10, 64)
+		t.total += v
+		if i == 3 {
+			t.idle = v
+		}
+	}
+	return t, nil
+}
+
+// usageBetween is the busy percentage between two snapshots.
+func usageBetween(prev, cur cpuTimes) float64 {
+	dTotal := cur.total - prev.total
+	if cur.total <= prev.total || dTotal == 0 {
+		return 0
+	}
+	dIdle := cur.idle - prev.idle
+	if cur.idle < prev.idle || dIdle > dTotal {
+		return 0
+	}
+	return (1 - float64(dIdle)/float64(dTotal)) * 100
+}
+
+// CPU measures CPU usage and temperature.
+//
+// Usage() is for the alert loop: it reports the average since its previous
+// call (i.e. over the alert interval). Status() is for on-demand commands
+// and measures its own short window, so /cpu never shifts the alert's
+// baseline. Both are safe for concurrent use.
 type CPU struct {
-	prevIdle  uint64
-	prevTotal uint64
+	mu           sync.Mutex
+	prev         cpuTimes
+	read         func() (cpuTimes, error)
+	statusWindow time.Duration
 }
 
 func NewCPU() *CPU {
-	return &CPU{}
+	return &CPU{read: readCPUTimes, statusWindow: 500 * time.Millisecond}
 }
 
 func (c *CPU) Name() string { return "CPU" }
 
+// Usage returns the average usage since the previous Usage call
+// (since boot on the first call).
 func (c *CPU) Usage() (CPUStat, error) {
-	b, err := os.ReadFile("/proc/stat")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cur, err := c.read()
 	if err != nil {
 		return CPUStat{}, err
 	}
+	pct := usageBetween(c.prev, cur)
+	c.prev = cur
+	return CPUStat{UsagePct: pct}, nil
+}
 
-	fields := strings.Fields(strings.Split(string(b), "\n")[0])[1:]
-	var idle, total uint64
-	for i, f := range fields {
-		v, _ := strconv.ParseUint(f, 10, 64)
-		total += v
-		if i == 3 {
-			idle = v
-		}
+// instantUsage samples usage over statusWindow without touching Usage's state.
+func (c *CPU) instantUsage() (float64, error) {
+	a, err := c.read()
+	if err != nil {
+		return 0, err
 	}
-
-	diffIdle := idle - c.prevIdle
-	diffTotal := total - c.prevTotal
-	c.prevIdle = idle
-	c.prevTotal = total
-
-	if diffTotal == 0 {
-		return CPUStat{}, nil
+	time.Sleep(c.statusWindow)
+	b, err := c.read()
+	if err != nil {
+		return 0, err
 	}
-
-	return CPUStat{UsagePct: (1 - float64(diffIdle)/float64(diffTotal)) * 100}, nil
+	return usageBetween(a, b), nil
 }
 
 // cpuThermalKeywords lists thermal zone type substrings in priority order.
@@ -109,7 +157,7 @@ func (c *CPU) TempC() (float64, error) {
 // e.g. "nginx 45.2%, python 12.1%". Processes below 0.5% are omitted.
 // Returns "" if ps is unavailable or nothing is consuming CPU.
 func TopProcs(n int) string {
-	out, err := exec.Command("ps", "-eo", "comm,%cpu", "--sort=-%cpu", "--no-headers", "-w").Output()
+	out, err := output("ps", "-eo", "comm,%cpu", "--sort=-%cpu", "--no-headers", "-w")
 	if err != nil {
 		return ""
 	}
@@ -132,11 +180,11 @@ func TopProcs(n int) string {
 }
 
 func (c *CPU) Status() (string, error) {
-	s, err := c.Usage()
+	pct, err := c.instantUsage()
 	if err != nil {
 		return "", err
 	}
-	line := "🖥 CPU: " + strconv.FormatFloat(s.UsagePct, 'f', 1, 64) + "%"
+	line := "🖥 CPU: " + strconv.FormatFloat(pct, 'f', 1, 64) + "%"
 	if t, err := c.TempC(); err == nil {
 		line += fmt.Sprintf(" | %.1f°C", t)
 	}
