@@ -18,7 +18,7 @@ const DockerAutoDiscover = "bpi-auto-discover"
 
 // DiscoverDockerContainers returns names of all currently running containers.
 func DiscoverDockerContainers() []string {
-	out, err := exec.Command("docker", "ps", "--format", "{{.Names}}").Output()
+	out, err := output("docker", "ps", "--format", "{{.Names}}")
 	if err != nil {
 		return nil
 	}
@@ -46,7 +46,7 @@ func (d Docker) ContainerName() string { return d.Container }
 func (d Docker) Available() bool       { _, err := exec.LookPath("docker"); return err == nil }
 
 func (d Docker) Health() (DockerHealth, error) {
-	out, err := exec.Command("docker", "inspect", "--format", "{{.State.Status}}", d.Container).Output()
+	out, err := output("docker", "inspect", "--format", "{{.State.Status}}", d.Container)
 	if err != nil {
 		var stderr string
 		var ee *exec.ExitError

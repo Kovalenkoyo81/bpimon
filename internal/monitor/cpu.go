@@ -3,7 +3,6 @@ package monitor
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -109,7 +108,7 @@ func (c *CPU) TempC() (float64, error) {
 // e.g. "nginx 45.2%, python 12.1%". Processes below 0.5% are omitted.
 // Returns "" if ps is unavailable or nothing is consuming CPU.
 func TopProcs(n int) string {
-	out, err := exec.Command("ps", "-eo", "comm,%cpu", "--sort=-%cpu", "--no-headers", "-w").Output()
+	out, err := output("ps", "-eo", "comm,%cpu", "--sort=-%cpu", "--no-headers", "-w")
 	if err != nil {
 		return ""
 	}

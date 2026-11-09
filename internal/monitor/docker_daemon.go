@@ -14,7 +14,7 @@ func (DockerDaemon) Available() bool { _, err := exec.LookPath("docker"); return
 
 // Ping returns the server version, or an error if the daemon is unreachable.
 func (DockerDaemon) Ping() (string, error) {
-	out, err := exec.Command("docker", "version", "--format", "{{.Server.Version}}").Output()
+	out, err := output("docker", "version", "--format", "{{.Server.Version}}")
 	if err != nil {
 		return "", fmt.Errorf("docker version: %w", err)
 	}

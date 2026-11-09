@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,7 +25,7 @@ func dmesgOutput() ([]byte, error) {
 	dmesgCache.Lock()
 	defer dmesgCache.Unlock()
 	if time.Since(dmesgCache.fetchedAt) > dmesgCacheTTL {
-		out, err := exec.Command("dmesg").Output()
+		out, err := output("dmesg")
 		if err != nil {
 			return nil, fmt.Errorf("dmesg: %w", err)
 		}

@@ -249,7 +249,9 @@ func (h *Handler) execute(action string, s notifier.Notifier) string {
 				}
 				return
 			}
-			out, err := exec.Command("docker", "inspect", "--format", "{{.State.Status}}|{{.State.StartedAt}}", name).Output()
+			ictx, icancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer icancel()
+			out, err := exec.CommandContext(ictx, "docker", "inspect", "--format", "{{.State.Status}}|{{.State.StartedAt}}", name).Output()
 			if err != nil {
 				_ = s.Send(fmt.Sprintf("🔄 Container %s restarted", name))
 				return
