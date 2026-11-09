@@ -11,5 +11,8 @@ type Button struct {
 // to a timestamped alert. Callers fall back to AlertSender.SendAlert when
 // the notifier does not implement it.
 type ButtonSender interface {
-	SendAlertWithButtons(text string, buttons []Button) error
+	// SendAlertWithButtons returns the sent message's ID.
+	SendAlertWithButtons(text string, buttons []Button) (messageID int, err error)
+	// ClearButtons removes the inline buttons from a sent message.
+	ClearButtons(messageID int) error
 }

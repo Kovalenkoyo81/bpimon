@@ -27,6 +27,7 @@ type Resolver interface {
 var (
 	ErrNotActive = errors.New("alert is not active")
 	ErrAmbiguous = errors.New("alert name prefix matches several alerts")
+	ErrUnknown   = errors.New("alert state is unknown right now")
 )
 
 // Callback data format: "res:<i|c>:<alert name>".

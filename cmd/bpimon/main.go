@@ -118,13 +118,23 @@ func main() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go manager.Run(ctx)
+	managerDone := make(chan struct{})
+	go func() {
+		manager.Run(ctx)
+		close(managerDone)
+	}()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	log.Info.Println("Shutting down...")
 	cancel()
+	// Let the manager save alert state before the process exits.
+	select {
+	case <-managerDone:
+	case <-time.After(5 * time.Second):
+		log.Warn.Println("alert manager did not stop in 5s")
+	}
 }
 
 // handleCallback processes an inline-button press from the configured chat.

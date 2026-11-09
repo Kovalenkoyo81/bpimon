@@ -2,7 +2,10 @@ package alert
 
 import (
 	"bpimon/internal/notifier"
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -142,19 +145,31 @@ type askStub struct{ stubAlert }
 
 func (*askStub) Choices() (string, string) { return "admin", "crash" }
 
-// buttonNotifier records which messages carried buttons.
+// buttonNotifier records which messages carried buttons and which
+// messages had their buttons cleared. Message IDs start at 1.
 type buttonNotifier struct {
 	collectingNotifier
 	withButtons []string
 	buttons     [][]notifier.Button
+	cleared     []int
 }
 
-func (n *buttonNotifier) SendAlertWithButtons(text string, b []notifier.Button) error {
+var _ notifier.ButtonSender = (*buttonNotifier)(nil)
+
+func (n *buttonNotifier) SendAlertWithButtons(text string, b []notifier.Button) (int, error) {
 	n.mu.Lock()
 	n.withButtons = append(n.withButtons, text)
 	n.buttons = append(n.buttons, b)
+	id := len(n.withButtons)
 	n.mu.Unlock()
-	return n.Send(text)
+	return id, n.Send(text)
+}
+
+func (n *buttonNotifier) ClearButtons(id int) error {
+	n.mu.Lock()
+	n.cleared = append(n.cleared, id)
+	n.mu.Unlock()
+	return nil
 }
 
 func countPrefix(n *collectingNotifier, sub string) int {
@@ -260,10 +275,67 @@ func TestAskableNewIncidentIgnoresCooldown(t *testing.T) {
 	}
 }
 
-func TestResolveInactiveFails(t *testing.T) {
-	_, _, m := newAskSetup(time.Hour)
+func TestResolveInactiveButStillFiringIsAccepted(t *testing.T) {
+	// e.g. right after a restart, before the first check
+	_, n, m := newAskSetup(0)
+	if err := m.Resolve("Docker app", Intentional); err != nil {
+		t.Fatalf("firing alert must be resolvable even if not marked active: %v", err)
+	}
+	runTick(m)
+	if len(n.all()) != 0 {
+		t.Fatalf("resolved as Intentional — nothing should be sent: %v", n.all())
+	}
+}
+
+func TestResolveInactiveAndClear(t *testing.T) {
+	a, _, m := newAskSetup(0)
+	a.firing = false
 	if err := m.Resolve("Docker app", Intentional); !errors.Is(err, ErrNotActive) {
 		t.Fatalf("expected ErrNotActive, got %v", err)
+	}
+}
+
+func TestResolveInactiveAndUnknown(t *testing.T) {
+	a := &verdictStub{name: "Docker app", v: Unknown}
+	m := NewManager([]Alert{a}, &buttonNotifier{}, time.Minute, 0)
+	if err := m.Resolve("Docker app", Intentional); !errors.Is(err, ErrUnknown) {
+		t.Fatalf("expected ErrUnknown, got %v", err)
+	}
+}
+
+func TestOnlyLatestQuestionKeepsButtons(t *testing.T) {
+	_, n, m := newAskSetup(0)
+	runTick(m) // question #1
+	runTick(m) // question #2 → clears #1
+	runTick(m) // question #3 → clears #2
+	if len(n.cleared) != 2 || n.cleared[0] != 1 || n.cleared[1] != 2 {
+		t.Fatalf("expected buttons cleared on #1 and #2, got %v", n.cleared)
+	}
+}
+
+func TestRecoveryClearsButtons(t *testing.T) {
+	a, n, m := newAskSetup(time.Hour)
+	runTick(m) // question #1
+	a.firing = false
+	runTick(m)
+	if len(n.cleared) != 1 || n.cleared[0] != 1 {
+		t.Fatalf("recovery must clear the open question's buttons, got %v", n.cleared)
+	}
+}
+
+func TestResolveClearsLatestQuestion(t *testing.T) {
+	_, n, m := newAskSetup(0)
+	runTick(m) // #1
+	runTick(m) // #2, clears #1
+	if err := m.Resolve("Docker app", Incident); err != nil {
+		t.Fatal(err)
+	}
+	if n.cleared[len(n.cleared)-1] != 2 {
+		t.Fatalf("resolve must clear the latest question #2, got %v", n.cleared)
+	}
+	runTick(m) // reminder without buttons, nothing more to clear
+	if len(n.cleared) != 2 {
+		t.Fatalf("unexpected extra clears: %v", n.cleared)
 	}
 }
 
@@ -361,6 +433,62 @@ func TestUnknownDoesNotFire(t *testing.T) {
 	runTick(m)
 	if len(n.all()) != 0 {
 		t.Fatalf("Unknown on a clear alert must send nothing: %v", n.all())
+	}
+}
+
+func TestStateSavedOnChangeAndRestored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "state.json")
+	_, _, m := newAskSetup(time.Hour)
+	m.SetStatePath(path)
+	runTick(m) // fires → saved immediately, no shutdown needed
+	if err := m.Resolve("Docker app", Intentional); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("state must be written on change: %v", err)
+	}
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if len(entries) != 1 {
+		t.Fatalf("expected only the state file, no temp leftovers: %v", entries)
+	}
+
+	// "restart": a fresh manager with the same state path
+	_, n2, m2 := newAskSetup(0)
+	m2.SetStatePath(path)
+	m2.loadState()
+	runTick(m2)
+	if len(n2.all()) != 0 {
+		t.Fatalf("Intentional answer must survive a restart, got %v", n2.all())
+	}
+}
+
+func TestLoadStateMissingOrCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(nil, &collectingNotifier{}, time.Minute, 0)
+	m.SetStatePath(filepath.Join(dir, "missing.json"))
+	m.loadState() // must not panic
+
+	bad := filepath.Join(dir, "bad.json")
+	_ = os.WriteFile(bad, []byte("{not json"), 0600)
+	m.SetStatePath(bad)
+	m.loadState()
+	if len(m.active) != 0 {
+		t.Fatal("corrupt state must be ignored")
+	}
+}
+
+func TestRunSavesStateOnShutdown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	m := NewManager(nil, &collectingNotifier{}, time.Hour, 0)
+	m.SetStatePath(path)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { m.Run(ctx); close(done) }()
+	cancel()
+	<-done
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("state must be saved when Run returns: %v", err)
 	}
 }
 

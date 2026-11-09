@@ -4,9 +4,6 @@ import (
 	"bpimon/internal/log"
 	"bpimon/internal/notifier"
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -21,8 +18,10 @@ type Manager struct {
 	lastSent      map[string]time.Time
 	active        map[string]bool
 	resolution    map[string]Resolution
+	question      map[string]int // alert name → message ID of the latest question with buttons
 	silencedUntil time.Time
 	statePath     string
+	saveMu        sync.Mutex // serialises state file writes
 }
 
 func (m *Manager) Silence(d time.Duration) {
@@ -62,13 +61,14 @@ func NewManager(a []Alert, n notifier.AlertSender, interval, cooldown time.Durat
 		lastSent:   make(map[string]time.Time),
 		active:     make(map[string]bool),
 		resolution: make(map[string]Resolution),
+		question:   make(map[string]int),
 	}
 }
 
+// Run checks alerts every interval until ctx is cancelled. State is saved
+// on every change, and once more before Run returns.
 func (m *Manager) Run(ctx context.Context) {
-	if m.statePath != "" {
-		m.loadState()
-	}
+	m.loadState()
 
 	t := time.NewTicker(m.interval)
 	defer t.Stop()
@@ -88,163 +88,186 @@ func (m *Manager) Run(ctx context.Context) {
 			}
 			m.checkAll()
 		case <-ctx.Done():
-			if m.statePath != "" {
-				m.saveState()
-			}
+			m.saveState()
 			return
 		}
 	}
 }
 
-// Resolve records an admin's answer for a currently active alert.
-// name may be a prefix of the alert name (callback data is truncated).
+// Resolve records an admin's answer. name may be a prefix of the alert
+// name (callback data is truncated). If the manager does not consider the
+// alert active (e.g. right after a restart, or a button on an old message),
+// the condition is checked right now instead of trusting stale state.
 func (m *Manager) Resolve(name string, r Resolution) error {
-	name, err := m.lookupName(name)
+	a, err := m.lookup(name)
 	if err != nil {
 		return err
 	}
+	name = a.Name()
+
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	active := m.active[name]
+	m.mu.Unlock()
+
+	if !active {
+		switch v, _ := evaluate(a); v {
+		case Clear:
+			return ErrNotActive
+		case Unknown:
+			return ErrUnknown
+		}
+	}
+
+	m.mu.Lock()
 	if !m.active[name] {
-		return ErrNotActive
+		m.active[name] = true
+		m.lastSent[name] = time.Now()
 	}
 	m.resolution[name] = r
+	msgID := m.question[name]
+	delete(m.question, name)
+	m.mu.Unlock()
+
+	// The pressed message has its buttons removed by the caller; this
+	// clears the latest question if a stale one was pressed instead.
+	m.clearButtons(msgID)
+	m.saveState()
 	return nil
 }
 
-// lookupName finds the alert whose name equals or starts with prefix.
-func (m *Manager) lookupName(prefix string) (string, error) {
-	var found []string
+// lookup finds the alert whose name equals or starts with prefix.
+func (m *Manager) lookup(prefix string) (Alert, error) {
+	var found []Alert
 	for _, a := range m.alerts {
 		n := a.Name()
 		if n == prefix {
-			return n, nil
+			return a, nil
 		}
 		if strings.HasPrefix(n, prefix) {
-			found = append(found, n)
+			found = append(found, a)
 		}
 	}
 	switch len(found) {
 	case 0:
-		return "", ErrNotActive
+		return nil, ErrNotActive
 	case 1:
 		return found[0], nil
 	default:
-		return "", ErrAmbiguous
+		return nil, ErrAmbiguous
 	}
 }
 
 // checkAll runs every alert once and sends fire/recovery notifications.
 // Alerts re-fire every cooldown while active. Askable alerts carry answer
-// buttons until resolved; an Intentional answer silences them until the
-// condition clears.
+// buttons until resolved — only on the latest question; an Intentional
+// answer silences them until the condition clears.
 func (m *Manager) checkAll() {
+	changed := false
 	for _, a := range m.alerts {
-		name := a.Name()
-		verdict, msg := evaluate(a)
-		if verdict == Unknown {
-			continue // keep previous state: no false recovery, no false alarm
+		if m.checkOne(a) {
+			changed = true
 		}
-		ok := verdict == Firing
-
-		m.mu.Lock()
-		active := m.active[name]
-		lastSent := m.lastSent[name]
-		res := m.resolution[name]
-		m.mu.Unlock()
-
-		askable, isAskable := a.(Askable)
-
-		if ok {
-			if res == Intentional {
-				continue
-			}
-			due := time.Since(lastSent) >= m.cooldown
-			if isAskable && !active {
-				due = true // new incident: ask even within cooldown of the previous one
-			}
-			if !due {
-				continue
-			}
-			text := "🚨 " + name + ": " + msg
-			if isAskable && res == unresolved {
-				m.sendQuestion(name, text, askable)
-			} else {
-				_ = m.notifier.SendAlert(text)
-			}
-			m.mu.Lock()
-			m.lastSent[name] = time.Now()
-			m.active[name] = true
-			m.mu.Unlock()
-		} else if active {
-			if res != Intentional {
-				_ = m.notifier.SendAlert("✅ " + name + ": back to normal")
-			}
-			m.mu.Lock()
-			m.active[name] = false
-			delete(m.resolution, name)
-			m.mu.Unlock()
-		}
+	}
+	if changed {
+		m.saveState()
 	}
 }
 
-func (m *Manager) sendQuestion(name, text string, a Askable) {
+// checkOne evaluates a single alert and reports whether state changed.
+func (m *Manager) checkOne(a Alert) bool {
+	name := a.Name()
+	verdict, msg := evaluate(a)
+	if verdict == Unknown {
+		return false // keep previous state: no false recovery, no false alarm
+	}
+
+	m.mu.Lock()
+	active := m.active[name]
+	lastSent := m.lastSent[name]
+	res := m.resolution[name]
+	m.mu.Unlock()
+
+	askable, isAskable := a.(Askable)
+
+	if verdict == Clear {
+		if !active {
+			return false
+		}
+		if res != Intentional {
+			_ = m.notifier.SendAlert("✅ " + name + ": back to normal")
+		}
+		m.mu.Lock()
+		m.active[name] = false
+		delete(m.resolution, name)
+		msgID := m.question[name]
+		delete(m.question, name)
+		m.mu.Unlock()
+		m.clearButtons(msgID)
+		return true
+	}
+
+	if res == Intentional {
+		return false
+	}
+	due := time.Since(lastSent) >= m.cooldown
+	if isAskable && !active {
+		due = true // new incident: ask even within cooldown of the previous one
+	}
+	if !due {
+		return false
+	}
+
+	text := "🚨 " + name + ": " + msg
+	newMsg := 0
+	if isAskable && res == unresolved {
+		newMsg = m.sendQuestion(name, text, askable)
+	} else {
+		_ = m.notifier.SendAlert(text)
+	}
+
+	m.mu.Lock()
+	m.lastSent[name] = time.Now()
+	m.active[name] = true
+	oldMsg := m.question[name]
+	if newMsg != 0 {
+		m.question[name] = newMsg
+	}
+	m.mu.Unlock()
+	if newMsg != 0 {
+		m.clearButtons(oldMsg) // only the latest question keeps its buttons
+	}
+	return true
+}
+
+// sendQuestion sends text with answer buttons and returns the message ID
+// (0 if buttons are unsupported or sending failed).
+func (m *Manager) sendQuestion(name, text string, a Askable) int {
 	bs, ok := m.notifier.(notifier.ButtonSender)
 	if !ok {
 		_ = m.notifier.SendAlert(text)
-		return
+		return 0
 	}
 	intentional, incident := a.Choices()
-	_ = bs.SendAlertWithButtons(text, []notifier.Button{
+	id, err := bs.SendAlertWithButtons(text, []notifier.Button{
 		{Text: intentional, Data: CallbackData(name, Intentional)},
 		{Text: incident, Data: CallbackData(name, Incident)},
 	})
-}
-
-type managerState struct {
-	Active     map[string]bool       `json:"active"`
-	LastSent   map[string]time.Time  `json:"last_sent"`
-	Resolution map[string]Resolution `json:"resolution,omitempty"`
-}
-
-func (m *Manager) loadState() {
-	data, err := os.ReadFile(m.statePath)
 	if err != nil {
-		return
+		log.Warn.Printf("send question for %s: %v", name, err)
+		return 0
 	}
-	var s managerState
-	if err := json.Unmarshal(data, &s); err != nil {
-		log.Warn.Printf("failed to load alert state from %s: %v", m.statePath, err)
-		return
-	}
-	if s.Active != nil {
-		m.active = s.Active
-	}
-	if s.LastSent != nil {
-		m.lastSent = s.LastSent
-	}
-	if s.Resolution != nil {
-		m.resolution = s.Resolution
-	}
-	log.Info.Printf("alert state loaded from %s", m.statePath)
+	return id
 }
 
-func (m *Manager) saveState() {
-	if err := os.MkdirAll(filepath.Dir(m.statePath), 0750); err != nil {
-		log.Error.Printf("failed to create state dir: %v", err)
+func (m *Manager) clearButtons(msgID int) {
+	if msgID == 0 {
 		return
 	}
-	m.mu.Lock()
-	s := managerState{Active: m.active, LastSent: m.lastSent, Resolution: m.resolution}
-	data, err := json.Marshal(s)
-	m.mu.Unlock()
-	if err != nil {
-		log.Error.Printf("failed to marshal alert state: %v", err)
+	bs, ok := m.notifier.(notifier.ButtonSender)
+	if !ok {
 		return
 	}
-	if err := os.WriteFile(m.statePath, data, 0600); err != nil {
-		log.Error.Printf("failed to save alert state to %s: %v", m.statePath, err)
-		return
+	if err := bs.ClearButtons(msgID); err != nil {
+		log.Warn.Printf("clear buttons on message %d: %v", msgID, err)
 	}
-	log.Info.Printf("alert state saved to %s", m.statePath)
 }

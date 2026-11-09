@@ -30,6 +30,9 @@ func (h *CallbackHandler) Handle(data string, userID int64, who string) Callback
 		if errors.Is(err, alert.ErrNotActive) {
 			return CallbackResult{Toast: "Already back to normal", Note: "ℹ️ Resolved before an answer was given"}
 		}
+		if errors.Is(err, alert.ErrUnknown) {
+			return CallbackResult{Toast: "⚠️ State unknown right now (Docker daemon unavailable?), try again later"}
+		}
 		if errors.Is(err, alert.ErrAmbiguous) {
 			return CallbackResult{Toast: "⚠️ Ambiguous container name, answer not recorded"}
 		}

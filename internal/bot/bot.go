@@ -31,15 +31,26 @@ func (b *Bot) SendAlert(text string) error {
 	return b.Send(alertStamp() + text)
 }
 
-// SendAlertWithButtons sends a timestamped alert with one row of inline buttons.
-func (b *Bot) SendAlertWithButtons(text string, buttons []notifier.Button) error {
+// SendAlertWithButtons sends a timestamped alert with one row of inline
+// buttons and returns the message ID.
+func (b *Bot) SendAlertWithButtons(text string, buttons []notifier.Button) (int, error) {
 	row := make([]tgbotapi.InlineKeyboardButton, 0, len(buttons))
 	for _, btn := range buttons {
 		row = append(row, tgbotapi.NewInlineKeyboardButtonData(btn.Text, btn.Data))
 	}
 	msg := tgbotapi.NewMessage(b.chatID, alertStamp()+text)
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(row)
-	_, err := b.api.Send(msg)
+	sent, err := b.api.Send(msg)
+	if err != nil {
+		return 0, err
+	}
+	return sent.MessageID, nil
+}
+
+// ClearButtons removes the inline keyboard from a message, keeping its text.
+func (b *Bot) ClearButtons(messageID int) error {
+	empty := tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}}
+	_, err := b.api.Request(tgbotapi.NewEditMessageReplyMarkup(b.chatID, messageID, empty))
 	return err
 }
 
