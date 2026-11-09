@@ -129,8 +129,12 @@ func main() {
 
 // handleCallback processes an inline-button press from the configured chat.
 func handleCallback(b *bot.Bot, h *bot.CallbackHandler, cq *tgbotapi.CallbackQuery, chatID int64) {
+	log.Info.Printf("callback received: data=%q from=%d", cq.Data, cq.From.ID)
 	if cq.Message == nil || cq.Message.Chat.ID != chatID {
-		_ = b.AnswerCallback(cq.ID, "")
+		log.Warn.Printf("callback ignored: not from the configured chat")
+		if err := b.AnswerCallback(cq.ID, ""); err != nil {
+			log.Warn.Printf("answer callback: %v", err)
+		}
 		return
 	}
 	who := cq.From.FirstName

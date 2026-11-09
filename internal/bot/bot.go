@@ -59,12 +59,22 @@ func alertStamp() string {
 	return fmt.Sprintf("🕐 %s UTC\n\n", time.Now().UTC().Format("02 Jan 2006, 15:04"))
 }
 
+// allowedUpdates is sent explicitly on every getUpdates call. Without it
+// Telegram reuses the last list stored for the token — which may exclude
+// callback_query, so inline-button presses would never arrive.
+var allowedUpdates = []string{tgbotapi.UpdateTypeMessage, tgbotapi.UpdateTypeCallbackQuery}
+
+func newUpdateConfig() tgbotapi.UpdateConfig {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+	u.AllowedUpdates = allowedUpdates
+	return u
+}
+
 // UpdatesChan returns a channel of incoming updates.
 // The channel closes if the Telegram connection is lost.
 func (b *Bot) UpdatesChan() <-chan tgbotapi.Update {
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-	upstream := b.api.GetUpdatesChan(u)
+	upstream := b.api.GetUpdatesChan(newUpdateConfig())
 	out := make(chan tgbotapi.Update)
 	go func() {
 		defer close(out)
