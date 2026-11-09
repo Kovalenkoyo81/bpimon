@@ -13,9 +13,11 @@ func NewDockerDaemon(d monitor.DockerDaemonReader) *DockerDaemon {
 
 func (a *DockerDaemon) Name() string { return "Docker daemon" }
 
-func (a *DockerDaemon) Check() (bool, string) {
+// Evaluate fires when the daemon is unreachable: here the error is the
+// condition itself, not a reason to report Unknown.
+func (a *DockerDaemon) Evaluate() (Verdict, string) {
 	if _, err := a.d.Ping(); err != nil {
-		return true, "unavailable — container states unknown"
+		return Firing, "unavailable — container states unknown"
 	}
-	return false, ""
+	return Clear, ""
 }

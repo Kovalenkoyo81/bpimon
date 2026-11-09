@@ -20,17 +20,12 @@ func (a *Docker) Choices() (intentional, incident string) {
 	return "✋ Stopped by admin", "💥 Crashed"
 }
 
-func (a *Docker) Check() (bool, string) {
-	v, msg := a.Evaluate()
-	return v == Firing, msg
-}
-
 // Evaluate returns Unknown when the daemon cannot be reached: the container's
 // state is not known, and the DockerDaemon alert reports the outage instead.
 func (a *Docker) Evaluate() (Verdict, string) {
 	h, err := a.d.Health()
 	if err != nil {
-		return Unknown, ""
+		return Unknown, err.Error()
 	}
 	if !h.Running {
 		return Firing, fmt.Sprintf("%q is %s", h.Container, h.Status)

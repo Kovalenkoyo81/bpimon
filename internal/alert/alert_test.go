@@ -7,6 +7,12 @@ import (
 	"testing"
 )
 
+// fires adapts Evaluate for table tests that only care about Firing.
+func fires(a Alert) (bool, string) {
+	v, msg := a.Evaluate()
+	return v == Firing, msg
+}
+
 // --- stubs ---
 
 type stubCPU struct{ pct float64 }
@@ -53,7 +59,7 @@ func TestCPUAlert(t *testing.T) {
 	}
 	for _, tt := range tests {
 		a := NewCPU(stubCPU{tt.pct}, tt.max)
-		got, _ := a.Check()
+		got, _ := fires(a)
 		if got != tt.want {
 			t.Errorf("CPU %.0f%% max=%.0f: got=%v want=%v", tt.pct, tt.max, got, tt.want)
 		}
@@ -73,7 +79,7 @@ func TestCPUTempAlert(t *testing.T) {
 	}
 	for _, tt := range tests {
 		a := NewCPUTemp(stubCPUTemp{tt.temp}, tt.max)
-		got, _ := a.Check()
+		got, _ := fires(a)
 		if got != tt.want {
 			t.Errorf("temp=%.0f max=%.0f: got=%v want=%v", tt.temp, tt.max, got, tt.want)
 		}
@@ -93,7 +99,7 @@ func TestMemoryAlert(t *testing.T) {
 	}
 	for _, tt := range tests {
 		a := NewMemory(stubMem{tt.pct}, tt.max)
-		got, _ := a.Check()
+		got, _ := fires(a)
 		if got != tt.want {
 			t.Errorf("mem=%d%% max=%d%%: got=%v want=%v", tt.pct, tt.max, got, tt.want)
 		}
@@ -107,7 +113,7 @@ func TestDiskAlertFiresOnWorstPartition(t *testing.T) {
 		{Mount: "/", UsedPct: 50},
 		{Mount: "/data", UsedPct: 90},
 	}}, 85)
-	fire, msg := a.Check()
+	fire, msg := fires(a)
 	if !fire {
 		t.Fatal("expected alert for /data at 90%")
 	}
@@ -118,7 +124,7 @@ func TestDiskAlertFiresOnWorstPartition(t *testing.T) {
 
 func TestDiskNoAlert(t *testing.T) {
 	a := NewDisk(stubDisk{[]monitor.DiskUsage{{Mount: "/", UsedPct: 50}}}, 85)
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if fire {
 		t.Fatal("no alert expected at 50%")
 	}
@@ -128,7 +134,7 @@ func TestDiskNoAlert(t *testing.T) {
 
 func TestSmartAlertHealthFailed(t *testing.T) {
 	a := NewSmart(stubSmart{monitor.SmartHealth{Device: "/dev/sda", Health: "FAILED", Temp: 30, Life: 90}}, 50, 10)
-	fire, msg := a.Check()
+	fire, msg := fires(a)
 	if !fire || msg != "FAILED" {
 		t.Errorf("expected FAILED alert, got fire=%v msg=%q", fire, msg)
 	}
@@ -136,7 +142,7 @@ func TestSmartAlertHealthFailed(t *testing.T) {
 
 func TestSmartAlertHighTemp(t *testing.T) {
 	a := NewSmart(stubSmart{monitor.SmartHealth{Health: "PASSED", Temp: 55, Life: 90}}, 50, 10)
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if !fire {
 		t.Fatal("expected temp alert at 55°C with max=50")
 	}
@@ -144,7 +150,7 @@ func TestSmartAlertHighTemp(t *testing.T) {
 
 func TestSmartAlertLowLife(t *testing.T) {
 	a := NewSmart(stubSmart{monitor.SmartHealth{Health: "PASSED", Temp: 30, Life: 8}}, 50, 10)
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if !fire {
 		t.Fatal("expected life alert at 8% with threshold=10")
 	}
@@ -152,7 +158,7 @@ func TestSmartAlertLowLife(t *testing.T) {
 
 func TestSmartAlertLifeUnavailable(t *testing.T) {
 	a := NewSmart(stubSmart{monitor.SmartHealth{Health: "PASSED", Temp: 30, Life: -1}}, 50, 10)
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if fire {
 		t.Fatal("no alert expected when life is unavailable (-1)")
 	}
@@ -160,7 +166,7 @@ func TestSmartAlertLifeUnavailable(t *testing.T) {
 
 func TestSmartNoAlert(t *testing.T) {
 	a := NewSmart(stubSmart{monitor.SmartHealth{Health: "PASSED", Temp: 30, Life: 90}}, 50, 10)
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if fire {
 		t.Fatal("no alert expected for healthy disk")
 	}
@@ -168,7 +174,7 @@ func TestSmartNoAlert(t *testing.T) {
 
 func TestSmartAlertTempUnavailable(t *testing.T) {
 	a := NewSmart(stubSmart{monitor.SmartHealth{Health: "PASSED", Temp: -1, Life: -1}}, 50, 10)
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if fire {
 		t.Fatal("no alert expected when temp is unavailable (-1)")
 	}
@@ -178,7 +184,7 @@ func TestSmartAlertTempUnavailable(t *testing.T) {
 
 func TestDockerAlertStopped(t *testing.T) {
 	a := NewDocker(stubDocker{monitor.DockerHealth{Container: "app", Status: "exited", Running: false}})
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if !fire {
 		t.Fatal("expected alert for stopped container")
 	}
@@ -186,7 +192,7 @@ func TestDockerAlertStopped(t *testing.T) {
 
 func TestDockerNoAlertRunning(t *testing.T) {
 	a := NewDocker(stubDocker{monitor.DockerHealth{Container: "app", Status: "running", Running: true}})
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if fire {
 		t.Fatal("no alert expected for running container")
 	}
@@ -196,7 +202,7 @@ func TestDockerNoAlertRunning(t *testing.T) {
 
 func TestSDAlertErrors(t *testing.T) {
 	a := NewSD(stubSD{monitor.SDHealth{Device: "mmcblk0", ErrorCount: 3, LastError: "timeout error"}})
-	fire, msg := a.Check()
+	fire, msg := fires(a)
 	if !fire {
 		t.Fatal("expected SD error alert")
 	}
@@ -207,7 +213,7 @@ func TestSDAlertErrors(t *testing.T) {
 
 func TestSDNoAlert(t *testing.T) {
 	a := NewSD(stubSD{monitor.SDHealth{Device: "mmcblk0", ErrorCount: 0}})
-	fire, _ := a.Check()
+	fire, _ := fires(a)
 	if fire {
 		t.Fatal("no alert expected with 0 errors")
 	}
@@ -245,10 +251,51 @@ type stubDaemon struct{ err error }
 func (s stubDaemon) Ping() (string, error) { return "29.1.3", s.err }
 
 func TestDockerDaemonAlert(t *testing.T) {
-	if ok, _ := NewDockerDaemon(stubDaemon{}).Check(); ok {
+	if ok, _ := fires(NewDockerDaemon(stubDaemon{})); ok {
 		t.Fatal("reachable daemon must not fire")
 	}
-	if ok, _ := NewDockerDaemon(stubDaemon{errors.New("down")}).Check(); !ok {
+	if ok, _ := fires(NewDockerDaemon(stubDaemon{errors.New("down")})); !ok {
 		t.Fatal("unreachable daemon must fire")
+	}
+}
+
+type errReader struct{}
+
+func (errReader) Usage() (monitor.CPUStat, error) { return monitor.CPUStat{}, errors.New("boom") }
+func (errReader) TempC() (float64, error)         { return 0, errors.New("boom") }
+func (errReader) Health() (monitor.SmartHealth, error) {
+	return monitor.SmartHealth{}, errors.New("boom")
+}
+func (errReader) DeviceName() string { return "sda" }
+
+type errMem struct{}
+
+func (errMem) Usage() (monitor.MemoryStat, error) { return monitor.MemoryStat{}, errors.New("boom") }
+
+type errDisk struct{}
+
+func (errDisk) Usage() ([]monitor.DiskUsage, error) { return nil, errors.New("boom") }
+
+type errSD struct{}
+
+func (errSD) Health() (monitor.SDHealth, error) { return monitor.SDHealth{}, errors.New("boom") }
+func (errSD) Name() string                      { return "SD x" }
+
+// A failed read must never look like "all good".
+func TestReadErrorsAreUnknown(t *testing.T) {
+	alerts := []Alert{
+		NewCPU(errReader{}, 80),
+		NewCPUTemp(errReader{}, 80),
+		NewMemory(errMem{}, 80),
+		NewDisk(errDisk{}, 80),
+		NewSmart(errReader{}, 50, 10),
+		NewSD(errSD{}),
+		NewDocker(errDocker{errors.New("boom")}),
+	}
+	for _, a := range alerts {
+		v, reason := a.Evaluate()
+		if v != Unknown || !strings.Contains(reason, "boom") {
+			t.Errorf("%s: read error gave %v %q, want Unknown with reason", a.Name(), v, reason)
+		}
 	}
 }

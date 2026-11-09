@@ -17,10 +17,10 @@ func NewDisk(d monitor.DiskReader, max int) *Disk {
 
 func (a *Disk) Name() string { return "Disk" }
 
-func (a *Disk) Check() (bool, string) {
+func (a *Disk) Evaluate() (Verdict, string) {
 	ds, err := a.disk.Usage()
 	if err != nil {
-		return false, ""
+		return Unknown, err.Error()
 	}
 	var over []string
 	for _, d := range ds {
@@ -29,7 +29,7 @@ func (a *Disk) Check() (bool, string) {
 		}
 	}
 	if len(over) > 0 {
-		return true, strings.Join(over, ", ")
+		return Firing, strings.Join(over, ", ")
 	}
-	return false, ""
+	return Clear, ""
 }

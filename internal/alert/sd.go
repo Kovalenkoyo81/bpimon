@@ -15,17 +15,17 @@ func NewSD(s monitor.SDReader) *SD {
 
 func (a *SD) Name() string { return a.s.Name() }
 
-func (a *SD) Check() (bool, string) {
+func (a *SD) Evaluate() (Verdict, string) {
 	h, err := a.s.Health()
 	if err != nil {
-		return false, ""
+		return Unknown, err.Error()
 	}
 	if h.ErrorCount > 0 {
 		msg := fmt.Sprintf("kernel errors: %d", h.ErrorCount)
 		if h.LastError != "" {
 			msg += " — " + h.LastError
 		}
-		return true, msg
+		return Firing, msg
 	}
-	return false, ""
+	return Clear, ""
 }
