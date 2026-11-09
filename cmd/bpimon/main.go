@@ -3,10 +3,12 @@ package main
 import (
 	"bpimon/internal/alert"
 	"bpimon/internal/bot"
+	"bpimon/internal/buildinfo"
 	"bpimon/internal/config"
 	"bpimon/internal/log"
 	"bpimon/internal/monitor"
 	"bpimon/internal/notifier"
+	"bpimon/internal/update"
 	"context"
 	"errors"
 	"flag"
@@ -19,6 +21,11 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+const (
+	githubRepo          = "Kovalenkoyo81/bpimon"
+	updateCheckInterval = 24 * time.Hour
 )
 
 // Set via -ldflags at build time.
@@ -54,9 +61,11 @@ func main() {
 
 	providers := monitor.NewProviders(cfg.Devices.Smart, cfg.Devices.MMC, cfg.Devices.Docker)
 
+	updates := update.NewGitHub(githubRepo)
 	handler := bot.Handler{
 		Providers: providers,
 		Admins:    cfg.Telegram.Admins,
+		Version:   &bot.VersionReporter{Build: buildinfo.New(version, buildDate), Updates: updates},
 	}
 	handler.InitPermissions()
 
@@ -77,7 +86,9 @@ func main() {
 	callbacks := bot.CallbackHandler{Resolver: manager, IsAdmin: handler.IsAdmin}
 
 	if botInstance != nil {
-		handler.SendRebootAlert(botInstance)
+		watcher := &update.Watcher{Source: updates, Current: version, Notifier: botInstance, Interval: updateCheckInterval}
+		watcher.MarkAnnounced(handler.SendStartupMessage(botInstance))
+		go watcher.Run(context.Background())
 		handler.SendInitialStatus(botInstance)
 		handler.SendCommandsMenu(botInstance)
 
