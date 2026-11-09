@@ -2,6 +2,8 @@ package alert
 
 import (
 	"bpimon/internal/monitor"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -208,5 +210,45 @@ func TestSDNoAlert(t *testing.T) {
 	fire, _ := a.Check()
 	if fire {
 		t.Fatal("no alert expected with 0 errors")
+	}
+}
+
+func TestDockerAlertIsAskable(t *testing.T) {
+	var a Alert = NewDocker(stubDocker{monitor.DockerHealth{Container: "app"}})
+	if _, ok := a.(Askable); !ok {
+		t.Fatal("docker alert must be Askable: a stopped container may have been stopped on purpose")
+	}
+}
+
+type errDocker struct{ err error }
+
+func (s errDocker) Health() (monitor.DockerHealth, error) { return monitor.DockerHealth{}, s.err }
+func (s errDocker) ContainerName() string                 { return "app" }
+
+func TestDockerRemovedFires(t *testing.T) {
+	a := NewDocker(stubDocker{monitor.DockerHealth{Container: "app", Status: monitor.StatusRemoved}})
+	v, msg := a.Evaluate()
+	if v != Firing || !strings.Contains(msg, "removed") {
+		t.Fatalf("removed container must fire, got %v %q", v, msg)
+	}
+}
+
+func TestDockerDaemonDownIsUnknown(t *testing.T) {
+	a := NewDocker(errDocker{monitor.ErrDaemonUnavailable})
+	if v, _ := a.Evaluate(); v != Unknown {
+		t.Fatalf("daemon down must be Unknown, got %v", v)
+	}
+}
+
+type stubDaemon struct{ err error }
+
+func (s stubDaemon) Ping() (string, error) { return "29.1.3", s.err }
+
+func TestDockerDaemonAlert(t *testing.T) {
+	if ok, _ := NewDockerDaemon(stubDaemon{}).Check(); ok {
+		t.Fatal("reachable daemon must not fire")
+	}
+	if ok, _ := NewDockerDaemon(stubDaemon{errors.New("down")}).Check(); !ok {
+		t.Fatal("unreachable daemon must fire")
 	}
 }

@@ -31,6 +31,7 @@ func NewProviders(smartDevices, mmcDevices, dockerContainers []string) []Provide
 		if !(Docker{}).Available() {
 			log.Warn.Printf("docker not found — skipping Docker monitoring")
 		} else {
+			providers = append(providers, DockerDaemon{})
 			containers := dockerContainers
 			if len(containers) == 1 && containers[0] == DockerAutoDiscover {
 				containers = DiscoverDockerContainers()

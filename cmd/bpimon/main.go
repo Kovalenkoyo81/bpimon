@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // Set via -ldflags at build time.
@@ -58,6 +60,22 @@ func main() {
 	}
 	handler.InitPermissions()
 
+	alerts := alert.FromProviders(providers, cfg.Thresholds)
+
+	manager := alert.NewManager(
+		alerts,
+		ntf,
+		time.Duration(cfg.Thresholds.IntervalMin)*time.Minute,
+		time.Duration(cfg.Thresholds.CooldownMin)*time.Minute,
+	)
+	handler.Silencer = manager
+
+	if *statePath != "" {
+		manager.SetStatePath(*statePath)
+	}
+
+	callbacks := bot.CallbackHandler{Resolver: manager, IsAdmin: handler.IsAdmin}
+
 	if botInstance != nil {
 		handler.SendRebootAlert(botInstance)
 		handler.SendInitialStatus(botInstance)
@@ -66,6 +84,10 @@ func main() {
 		go func() {
 			for {
 				for update := range botInstance.UpdatesChan() {
+					if cq := update.CallbackQuery; cq != nil {
+						handleCallback(botInstance, &callbacks, cq, cfg.Telegram.ChatID)
+						continue
+					}
 					if update.Message == nil {
 						continue
 					}
@@ -84,20 +106,6 @@ func main() {
 		}()
 	}
 
-	alerts := alert.FromProviders(providers, cfg.Thresholds)
-
-	manager := alert.NewManager(
-		alerts,
-		ntf,
-		time.Duration(cfg.Thresholds.IntervalMin)*time.Minute,
-		time.Duration(cfg.Thresholds.CooldownMin)*time.Minute,
-	)
-	handler.Silencer = manager
-
-	if *statePath != "" {
-		manager.SetStatePath(*statePath)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	go manager.Run(ctx)
 
@@ -106,6 +114,28 @@ func main() {
 	<-sig
 	log.Info.Println("Shutting down...")
 	cancel()
+}
+
+// handleCallback processes an inline-button press from the configured chat.
+func handleCallback(b *bot.Bot, h *bot.CallbackHandler, cq *tgbotapi.CallbackQuery, chatID int64) {
+	if cq.Message == nil || cq.Message.Chat.ID != chatID {
+		_ = b.AnswerCallback(cq.ID, "")
+		return
+	}
+	who := cq.From.FirstName
+	if cq.From.UserName != "" {
+		who = "@" + cq.From.UserName
+	}
+	res := h.Handle(cq.Data, cq.From.ID, who)
+	log.Info.Printf("callback %q from %d: %s", cq.Data, cq.From.ID, res.Toast)
+	if err := b.AnswerCallback(cq.ID, res.Toast); err != nil {
+		log.Warn.Printf("answer callback: %v", err)
+	}
+	if res.Note != "" {
+		if err := b.EditText(cq.Message.MessageID, cq.Message.Text+"\n\n"+res.Note); err != nil {
+			log.Warn.Printf("edit message: %v", err)
+		}
+	}
 }
 
 // connectTelegram retries bot.New with linear backoff until the connection succeeds.

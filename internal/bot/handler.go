@@ -45,7 +45,8 @@ func checkCommand(cmd string) bool {
 	return err == nil
 }
 
-func (h *Handler) isAdmin(id int64) bool {
+// IsAdmin reports whether id is listed in Admins.
+func (h *Handler) IsAdmin(id int64) bool {
 	for _, a := range h.Admins {
 		if a == id {
 			return true
@@ -75,7 +76,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 	}
 
 	if strings.HasPrefix(command, "/restart_") {
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can restart containers"
 		}
 		container := h.findContainerByNormalized(command[len("/restart_"):])
@@ -119,7 +120,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return h.collectByPrefix("docker")
 
 	case "/restart":
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can restart containers"
 		}
 		if len(parts) >= 2 {
@@ -144,7 +145,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return "Available containers:\n" + strings.Join(names, "\n")
 
 	case "/silence":
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can manage alert silence"
 		}
 		if h.Silencer == nil {
@@ -184,7 +185,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return "⚠️ Invalid or expired code"
 
 	case "/reboot":
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can reboot the server"
 		}
 		if !h.canReboot {
@@ -194,7 +195,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return fmt.Sprintf("🔐 Type `/confirm %s` within 60 seconds to confirm reboot.", code)
 
 	case "/poweroff":
-		if !h.isAdmin(userID) {
+		if !h.IsAdmin(userID) {
 			return "⚠️ Only admins can power off the server"
 		}
 		if !h.canPoweroff {

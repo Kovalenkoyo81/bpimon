@@ -22,6 +22,8 @@ func FromProviders(providers []monitor.Provider, t config.Thresholds) []Alert {
 			alerts = append(alerts, NewSmart(v, t.SmartTemp, t.SmartLife))
 		case monitor.SD:
 			alerts = append(alerts, NewSD(v))
+		case monitor.DockerDaemon:
+			alerts = append(alerts, NewDockerDaemon(v))
 		case monitor.Docker:
 			alerts = append(alerts, NewDocker(v))
 		}
