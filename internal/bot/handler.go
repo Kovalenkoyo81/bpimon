@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -95,7 +96,7 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return h.buildCommandsMenu()
 
 	case "/status":
-		return h.collectByPrefix("")
+		return h.collect()
 
 	case "/version":
 		if h.Version == nil {
@@ -104,28 +105,28 @@ func (h *Handler) Handle(text string, userID int64, s notifier.Notifier) string 
 		return h.Version.Report()
 
 	case "/cpu":
-		return h.collectByName("CPU")
+		return h.collect(monitor.KindCPU)
 
 	case "/ram":
-		return h.collectByName("RAM")
+		return h.collect(monitor.KindRAM)
 
 	case "/disk":
-		return h.collectByName("Disk")
+		return h.collect(monitor.KindDisk)
 
 	case "/sd":
-		if !h.hasProviderByPrefix("sd") {
+		if !h.has(monitor.KindSD) {
 			return "No SD cards detected on this system"
 		}
-		return h.collectByPrefix("sd")
+		return h.collect(monitor.KindSD)
 
 	case "/smart":
-		if !h.hasProviderByPrefix("smart") {
+		if !h.has(monitor.KindSmart) {
 			return "⚠️ SMART unavailable: smartctl not found"
 		}
-		return h.collectByPrefix("smart")
+		return h.collect(monitor.KindSmart)
 
 	case "/docker":
-		return h.collectByPrefix("docker")
+		return h.collect(monitor.KindDocker)
 
 	case "/restart":
 		if !h.IsAdmin(userID) {
@@ -289,39 +290,28 @@ func (h *Handler) findContainerByNormalized(normalized string) string {
 	return ""
 }
 
-func (h *Handler) hasProviderByPrefix(prefix string) bool {
+func (h *Handler) has(k monitor.Kind) bool {
 	for _, p := range h.Providers {
-		if strings.HasPrefix(strings.ToLower(p.Name()), prefix) {
+		if p.Kind() == k {
 			return true
 		}
 	}
 	return false
 }
 
-func (h *Handler) collectByName(name string) string {
+// collect joins the status of all providers of the given kinds
+// (all providers if none are given), in provider order.
+func (h *Handler) collect(kinds ...monitor.Kind) string {
 	var b strings.Builder
 	for _, p := range h.Providers {
-		if strings.EqualFold(p.Name(), name) {
-			s, err := p.Status()
-			if err != nil {
-				s = p.Name() + ": error reading status"
-			}
-			b.WriteString(s + "\n\n")
+		if len(kinds) > 0 && !slices.Contains(kinds, p.Kind()) {
+			continue
 		}
-	}
-	return strings.TrimSpace(b.String())
-}
-
-func (h *Handler) collectByPrefix(prefix string) string {
-	var b strings.Builder
-	for _, p := range h.Providers {
-		if prefix == "" || strings.HasPrefix(strings.ToLower(p.Name()), prefix) {
-			s, err := p.Status()
-			if err != nil {
-				s = p.Name() + ": error reading status"
-			}
-			b.WriteString(s + "\n\n")
+		s, err := p.Status()
+		if err != nil {
+			s = p.Name() + ": error reading status"
 		}
+		b.WriteString(s + "\n\n")
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -366,7 +356,7 @@ func systemRebootUptime() time.Duration {
 }
 
 func (h *Handler) SendInitialStatus(s notifier.Notifier) {
-	msg := h.collectByPrefix("")
+	msg := h.collect()
 	if msg != "" {
 		_ = s.Send("📊 Initial system status:\n" + msg)
 	}
@@ -380,7 +370,7 @@ func (h *Handler) buildCommandsMenu() string {
 	b.WriteString("/ram — RAM usage\n")
 	b.WriteString("/disk — disk usage\n")
 	b.WriteString("/smart — SMART disk health\n")
-	if h.hasProviderByPrefix("sd") {
+	if h.has(monitor.KindSD) {
 		b.WriteString("/sd — SD cards\n")
 	}
 	b.WriteString("\n🐳 Docker:\n")

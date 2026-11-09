@@ -17,13 +17,29 @@ func init() {
 
 type mockProvider struct{ name, status string }
 
-func (m mockProvider) Name() string            { return m.name }
+func (m mockProvider) Name() string { return m.name }
+func (m mockProvider) Kind() monitor.Kind {
+	switch strings.Fields(m.name)[0] {
+	case "CPU":
+		return monitor.KindCPU
+	case "RAM":
+		return monitor.KindRAM
+	case "Disk":
+		return monitor.KindDisk
+	case "SMART":
+		return monitor.KindSmart
+	case "SD":
+		return monitor.KindSD
+	}
+	return 0
+}
 func (m mockProvider) Status() (string, error) { return m.status, nil }
 
 // mockDockerProvider satisfies monitor.ContainerProvider without calling docker.
 type mockDockerProvider struct{ container string }
 
-func (m mockDockerProvider) Name() string { return "Docker " + m.container }
+func (m mockDockerProvider) Name() string       { return "Docker " + m.container }
+func (m mockDockerProvider) Kind() monitor.Kind { return monitor.KindDocker }
 func (m mockDockerProvider) Status() (string, error) {
 	return "🐳 " + m.container + " — ✅ running", nil
 }
@@ -205,5 +221,29 @@ func TestHandleConfirmDockerSendsRestartingMessage(t *testing.T) {
 	}
 	if !strings.Contains(s.first(), "Restarting") {
 		t.Errorf("expected 'Restarting myapp...' as first message, got %q", s.first())
+	}
+}
+
+type kindProvider struct {
+	kind         monitor.Kind
+	name, status string
+}
+
+func (k kindProvider) Name() string            { return k.name }
+func (k kindProvider) Kind() monitor.Kind      { return k.kind }
+func (k kindProvider) Status() (string, error) { return k.status, nil }
+
+// Commands select providers by Kind, not by display name.
+func TestCommandsSelectByKindNotName(t *testing.T) {
+	h := newHandler(nil, []monitor.Provider{
+		kindProvider{monitor.KindDocker, "Whale engine", "daemon_ok"},
+		kindProvider{monitor.KindRAM, "Docker-looking RAM", "ram_ok"},
+	})
+	got := h.Handle("/docker", 1, nil)
+	if !strings.Contains(got, "daemon_ok") || strings.Contains(got, "ram_ok") {
+		t.Fatalf("/docker = %q", got)
+	}
+	if got := h.Handle("/ram", 1, nil); got != "ram_ok" {
+		t.Fatalf("/ram = %q", got)
 	}
 }
