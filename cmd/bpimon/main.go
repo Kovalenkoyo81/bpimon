@@ -11,17 +11,13 @@ import (
 	"bpimon/internal/system"
 	"bpimon/internal/update"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 	"time"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const (
@@ -50,22 +46,24 @@ func main() {
 
 	log.Info.Println("Starting Banana Bot...")
 
-	var ntf notifier.AlertSender
-	var botInstance *bot.Bot
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
+	var ntf notifier.AlertSender = notifier.Dummy{}
+	var tg *bot.Bot
 	if cfg.Telegram.Enabled {
-		botInstance = connectTelegram(cfg.Telegram.Token, cfg.Telegram.ChatID)
-		ntf = botInstance
-	} else {
-		ntf = notifier.Dummy{}
+		var err error
+		if tg, err = bot.Connect(ctx, cfg.Telegram.Token, cfg.Telegram.ChatID); err != nil {
+			log.Info.Println("Shutting down before Telegram connected")
+			return
+		}
+		ntf = tg
 	}
 
 	providers := monitor.NewProviders(cfg.Devices.Smart, cfg.Devices.MMC, cfg.Devices.Docker)
 
-	alerts := alert.FromProviders(providers, cfg.Thresholds)
-
 	manager := alert.NewManager(
-		alerts,
+		alert.FromProviders(providers, cfg.Thresholds),
 		ntf,
 		time.Duration(cfg.Thresholds.IntervalMin)*time.Minute,
 		time.Duration(cfg.Thresholds.CooldownMin)*time.Minute,
@@ -83,104 +81,31 @@ func main() {
 		System:    system.Actions{},
 	})
 
-	callbacks := bot.CallbackHandler{Resolver: manager, IsAdmin: handler.IsAdmin}
+	if tg != nil {
+		watcher := &update.Watcher{Source: updates, Current: version, Notifier: tg, Interval: updateCheckInterval}
+		watcher.MarkAnnounced(handler.SendStartupMessage(tg))
+		handler.SendInitialStatus(tg)
+		handler.SendCommandsMenu(tg)
 
-	if botInstance != nil {
-		watcher := &update.Watcher{Source: updates, Current: version, Notifier: botInstance, Interval: updateCheckInterval}
-		watcher.MarkAnnounced(handler.SendStartupMessage(botInstance))
-		go watcher.Run(context.Background())
-		handler.SendInitialStatus(botInstance)
-		handler.SendCommandsMenu(botInstance)
-
-		go func() {
-			for {
-				for update := range botInstance.UpdatesChan() {
-					if cq := update.CallbackQuery; cq != nil {
-						handleCallback(botInstance, &callbacks, cq, cfg.Telegram.ChatID)
-						continue
-					}
-					if update.Message == nil {
-						continue
-					}
-					if update.Message.Chat.ID != cfg.Telegram.ChatID {
-						continue
-					}
-					response := handler.Handle(update.Message.Text, update.Message.From.ID, botInstance)
-					if response != "" {
-						log.Info.Printf("response len=%d val=%q", len(response), response)
-						_ = botInstance.Send(response)
-					}
-				}
-				log.Warn.Println("Telegram updates channel closed — reconnecting")
-				botInstance = connectTelegram(cfg.Telegram.Token, cfg.Telegram.ChatID)
-			}
-		}()
+		callbacks := &bot.CallbackHandler{Resolver: manager, IsAdmin: handler.IsAdmin}
+		dispatcher := bot.NewDispatcher(tg, handler, callbacks, cfg.Telegram.ChatID)
+		go watcher.Run(ctx)
+		go dispatcher.Run(ctx, tg.UpdatesChan())
+		defer tg.StopUpdates()
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	managerDone := make(chan struct{})
 	go func() {
 		manager.Run(ctx)
 		close(managerDone)
 	}()
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
+	<-ctx.Done()
 	log.Info.Println("Shutting down...")
-	cancel()
 	// Let the manager save alert state before the process exits.
 	select {
 	case <-managerDone:
 	case <-time.After(5 * time.Second):
 		log.Warn.Println("alert manager did not stop in 5s")
-	}
-}
-
-// handleCallback processes an inline-button press from the configured chat.
-func handleCallback(b *bot.Bot, h *bot.CallbackHandler, cq *tgbotapi.CallbackQuery, chatID int64) {
-	log.Info.Printf("callback received: data=%q from=%d", cq.Data, cq.From.ID)
-	if cq.Message == nil || cq.Message.Chat.ID != chatID {
-		log.Warn.Printf("callback ignored: not from the configured chat")
-		if err := b.AnswerCallback(cq.ID, ""); err != nil {
-			log.Warn.Printf("answer callback: %v", err)
-		}
-		return
-	}
-	who := cq.From.FirstName
-	if cq.From.UserName != "" {
-		who = "@" + cq.From.UserName
-	}
-	res := h.Handle(cq.Data, cq.From.ID, who)
-	log.Info.Printf("callback %q from %d: %s", cq.Data, cq.From.ID, res.Toast)
-	if err := b.AnswerCallback(cq.ID, res.Toast); err != nil {
-		log.Warn.Printf("answer callback: %v", err)
-	}
-	if res.Note != "" {
-		if err := b.EditText(cq.Message.MessageID, cq.Message.Text+"\n\n"+res.Note); err != nil {
-			log.Warn.Printf("edit message: %v", err)
-		}
-	}
-}
-
-// connectTelegram retries bot.New with linear backoff until the connection succeeds.
-// This handles the case where DNS is not yet available on system startup.
-func connectTelegram(token string, chatID int64) *bot.Bot {
-	for attempt := 1; ; attempt++ {
-		b, err := bot.New(token, chatID)
-		if err == nil {
-			return b
-		}
-		delay := time.Duration(attempt) * 5 * time.Second
-		if delay > 60*time.Second {
-			delay = 60 * time.Second
-		}
-		msg := "connection failed"
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
-			msg = urlErr.Err.Error()
-		}
-		log.Warn.Printf("Telegram unavailable (attempt %d): %s — retry in %s", attempt, msg, delay)
-		time.Sleep(delay)
 	}
 }

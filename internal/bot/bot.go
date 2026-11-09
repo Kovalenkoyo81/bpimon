@@ -1,8 +1,13 @@
 package bot
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"time"
+
+	"bpimon/internal/log"
 
 	"bpimon/internal/notifier"
 
@@ -82,16 +87,35 @@ func newUpdateConfig() tgbotapi.UpdateConfig {
 	return u
 }
 
-// UpdatesChan returns a channel of incoming updates.
-// The channel closes if the Telegram connection is lost.
+// UpdatesChan returns the channel of incoming updates. The library retries
+// failed polls on its own; the channel is closed only by StopUpdates.
 func (b *Bot) UpdatesChan() <-chan tgbotapi.Update {
-	upstream := b.api.GetUpdatesChan(newUpdateConfig())
-	out := make(chan tgbotapi.Update)
-	go func() {
-		defer close(out)
-		for u := range upstream {
-			out <- u
+	return b.api.GetUpdatesChan(newUpdateConfig())
+}
+
+// StopUpdates stops long polling and closes the updates channel.
+func (b *Bot) StopUpdates() { b.api.StopReceivingUpdates() }
+
+// Connect retries New with linear backoff (5s steps, max 60s) until it
+// succeeds or ctx is cancelled. This covers DNS or network not being ready
+// at boot.
+func Connect(ctx context.Context, token string, chatID int64) (*Bot, error) {
+	for attempt := 1; ; attempt++ {
+		b, err := New(token, chatID)
+		if err == nil {
+			return b, nil
 		}
-	}()
-	return out
+		delay := min(time.Duration(attempt)*5*time.Second, 60*time.Second)
+		msg := "connection failed"
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			msg = urlErr.Err.Error()
+		}
+		log.Warn.Printf("Telegram unavailable (attempt %d): %s — retry in %s", attempt, msg, delay)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
