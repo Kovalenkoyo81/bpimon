@@ -68,8 +68,7 @@ func TestReportWithoutUpdates(t *testing.T) {
 }
 
 func TestVersionCommand(t *testing.T) {
-	h := &Handler{Version: reporter(fakeSource{r: update.Release{Tag: "v1.6.2"}})}
-	h.InitPermissions()
+	h := NewHandler(HandlerConfig{Version: reporter(fakeSource{r: update.Release{Tag: "v1.6.2"}})})
 	if got := h.Handle("/version", 1, nil); !strings.Contains(got, "bpimon v1.6.2") {
 		t.Fatalf("/version = %q", got)
 	}

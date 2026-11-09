@@ -8,6 +8,7 @@ import (
 	"bpimon/internal/log"
 	"bpimon/internal/monitor"
 	"bpimon/internal/notifier"
+	"bpimon/internal/system"
 	"bpimon/internal/update"
 	"context"
 	"errors"
@@ -61,14 +62,6 @@ func main() {
 
 	providers := monitor.NewProviders(cfg.Devices.Smart, cfg.Devices.MMC, cfg.Devices.Docker)
 
-	updates := update.NewGitHub(githubRepo)
-	handler := bot.Handler{
-		Providers: providers,
-		Admins:    cfg.Telegram.Admins,
-		Version:   &bot.VersionReporter{Build: buildinfo.New(version, buildDate), Updates: updates},
-	}
-	handler.InitPermissions()
-
 	alerts := alert.FromProviders(providers, cfg.Thresholds)
 
 	manager := alert.NewManager(
@@ -77,11 +70,18 @@ func main() {
 		time.Duration(cfg.Thresholds.IntervalMin)*time.Minute,
 		time.Duration(cfg.Thresholds.CooldownMin)*time.Minute,
 	)
-	handler.Silencer = manager
-
 	if *statePath != "" {
 		manager.SetStatePath(*statePath)
 	}
+
+	updates := update.NewGitHub(githubRepo)
+	handler := bot.NewHandler(bot.HandlerConfig{
+		Providers: providers,
+		Admins:    cfg.Telegram.Admins,
+		Silencer:  manager,
+		Version:   &bot.VersionReporter{Build: buildinfo.New(version, buildDate), Updates: updates},
+		System:    system.Actions{},
+	})
 
 	callbacks := bot.CallbackHandler{Resolver: manager, IsAdmin: handler.IsAdmin}
 
